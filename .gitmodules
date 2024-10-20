@@ -1,0 +1,3 @@
+[submodule "STaRC"]
+	path = STaRC
+	url = https://github.com/RishanthRajendhran/STaRC.git
