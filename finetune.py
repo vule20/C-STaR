@@ -4,12 +4,11 @@ import wandb
 import logging
 import torch
 import transformers
-from transformers import AutoModelForCausalLM, AutoTokenizer, DataCollatorForSeq2Seq, DataCollatorForLanguageModeling, DataCollatorForSeq2Seq, AdamW, get_scheduler, T5ForConditionalGeneration, T5Tokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, DataCollatorForSeq2Seq, DataCollatorForLanguageModeling, DataCollatorForSeq2Seq, AdamW, get_scheduler, T5ForConditionalGeneration, T5Tokenizer, LlamaForCausalLM
 from torch.optim import Adam
 from datasets import Dataset, load_dataset
 import numpy as np
 import json
-import deepspeed
 import json
 from tqdm import tqdm
 import regex as re
@@ -18,11 +17,9 @@ import glob
 from os.path import exists
 from pathlib import Path
 from torch.utils.data import DataLoader
-import bitsandbytes as bnb
-import math
-from peft import prepare_model_for_int8_training, LoraConfig, get_peft_model
 import math
 from torch.autograd import Variable
+from peft import prepare_model_for_kbit_training, LoraConfig, get_peft_model
 
 MODEL_TEMPERATURE=0.1
 MODEL_TOP_P=0.9
@@ -32,14 +29,44 @@ MODEL_DO_SAMPLE=True
 MODEL_REPETITION_PENALTY=1.0
 MAXLENGTH=512
 
-supportedModels = ["gptj", "unifiedqa"]
+supportedModels = ["gptj", "unifiedqa", "llama3.1-instruct"]
 supportedSizes = {
     "gptj": ["6b"],
     "unifiedqa": ["3b"],
+    "llama3.1-instruct": ["8b"]
 }
-# supportedDatasets = ["commonsense_qa", "gsm8k", "arithmetic"]
-supportedDatasets = ["commonsense_qa", "gsm8k"]
+supportedDatasets = ["commonsense_qa", "gsm8k", "arithmetic"]
 supportedHFDatasets = ["commonsense_qa", "gsm8k"]
+
+promptHeader = {
+    "gptj": "",
+    "unifiedqa": "",
+    "llama3.1-instruct": """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+You are a helpful assistant<|eot_id|>""",
+}
+
+promptFormat = {
+    "gptj": {
+        "header": "",
+        "content": "{input}{output}",
+        "footer": "",
+    },
+    "unifiedqa": {
+        "header": "",
+        "content": "{input}{output}",
+        "footer": "",
+    },
+    "llama3.1-instruct": {
+        "header": """<|start_header_id|>user<|end_header_id|>
+
+""",
+        "content": """{input}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+{output}""",
+        "footer": "<|eot_id|>",
+    },
+}
 
 parser = argparse.ArgumentParser()
 
@@ -48,6 +75,13 @@ parser.add_argument(
     type=str,
     help="Path to file to print logging information",
     default=None
+)
+
+parser.add_argument(
+    "-cache_dir",
+    type=str,
+    help="Path to HF cache",
+    required=True
 )
 
 parser.add_argument(
@@ -61,6 +95,13 @@ parser.add_argument(
     "-size",
     help="Size of HuggingFace model to use",
     default="6b"
+)
+
+parser.add_argument(
+    "-modelPath",
+    type=str,
+    help="Path to (finetuned) model to use",
+    default=None
 )
 
 parser.add_argument(
@@ -161,34 +202,9 @@ parser.add_argument(
     help="Booleaan flag to indicate if the -testFiles input is a directory path",
 )
 
-parser.add_argument(
-    "-deepSpeed",
-    action="store_true",
-    help="Boolean flag to indicate execution through deepspeed"
-)
-
-#Arguments for DeepSpeed
-parser.add_argument(
-    "--local_rank", 
-    type=int, 
-    help="[DEEPSPEED ARGUMENT]",
-    default=0
-)
-
-parser.add_argument(
-    "--do_eval",
-    action="store_true",
-    help="[DEEPSPEED ARGUMENT] Boolean flag to enable inference mode"
-)
-
-parser.add_argument(
-    "--deepspeed", 
-    help="[DEEPSPEED ARGUMENT] Path to deepspeed configuration"
-)
-
 #---------------------------------------------------------------------------
 class DatasetTokenizer():
-    def __init__(self, modelName, tokenizer, dataset, direct=False, trainPrompt="s"):
+    def __init__(self, modelName, tokenizer, dataset, direct=False, trainPrompt=""):
         self.modelName = modelName
         self.tokenizer = tokenizer
         if dataset not in supportedDatasets:
@@ -198,99 +214,105 @@ class DatasetTokenizer():
         self.trainPrompt = trainPrompt
 
     def _generateIndividualPrompt(self, instance): 
-        #commonsense_qa on HuggingFace
-        # {
-        #     "id": (string),
-        #     "question": (string),
-        #     "choices": {
-        #         "labels": [(string),...],
-        #         "text": [(string),...]
-        #     },
-        #     "rationale": (string),
-        #     "answerKey": (string)
-        # }
-        if self.modelName == "gptj":
-            if self.dataset == "commonsense_qa":
-                prompt = self.trainPrompt
-                prompt += "Q: " + instance["question"] + "\nAnswer Choices:\n"
-                corrAns = ""
-                for c, t in zip(instance["choices"]["label"], instance["choices"]["text"]):
-                    prompt += "({}) {}".format(c.lower(), t.lower())
-                    prompt += "\n"
-                    if c.lower() == instance["answerKey"].lower():
-                        corrAns = t
-                prompt += "A: "
-                if self.direct: 
-                    prompt += "({}).\n\n".format(instance["answerKey"].lower())
-                else:
-                    prompt += "{} Therefore, the answer is {} ({}).\n\n".format(instance["rationale"], corrAns.lower(), instance["answerKey"].lower())
-            #gsm8k on HuggingFace
+            inp = self.trainPrompt
+            out = ""
+            #commonsense_qa on HuggingFace
             # {
+            #     "id": (string),
             #     "question": (string),
-            #     "answer": (string)
+            #     "choices": {
+            #         "labels": [(string),...],
+            #         "text": [(string),...]
+            #     },
+            #     "rationale": (string),
+            #     "answerKey": (string)
             # }
-            elif self.dataset == "gsm8k": 
-                prompt = self.trainPrompt
-                prompt += "Q: " + instance["question"] 
-                extractedAnswer = extractAnswer(instance["answer"], self.dataset, self.direct)
-                prompt += "\nA: "
-                if self.direct: 
-                    prompt += extractedAnswer["answer"]
-                else:
-                    prompt += instance["answer"]
+            if self.modelName in ["gptj", "llama3.1-instruct"]:
+                if self.dataset == "commonsense_qa":
+                    inp += "Q: " + instance["question"] + "\nAnswer Choices:\n"
+                    corrAns = ""
+                    for c, t in zip(instance["choices"]["label"], instance["choices"]["text"]):
+                        inp += "({}) {}".format(c.lower(), t.lower())
+                        inp += "\n"
+                        if c.lower() == instance["answerKey"].lower():
+                            corrAns = t
+                    inp += "A: "
+                    if self.direct: 
+                        out += "({}).\n\n".format(instance["answerKey"].lower())
+                    else:
+                        out += "{} Therefore, the answer is {} ({}).\n\n".format(instance["rationale"], corrAns.lower(), instance["answerKey"].lower())
+                #gsm8k on HuggingFace
+                # {
+                #     "question": (string),
+                #     "answer": (string)
+                # }
+                elif self.dataset == "gsm8k": 
+                    inp += "Q: " + instance["question"] 
+                    extractedAnswer = extractAnswer(instance["answer"], self.dataset, self.direct)
+                    inp += "\nA: "
+                    if self.direct: 
+                        out += extractedAnswer["answer"]
+                    else:
+                        out += instance["answer"]
+                else: 
+                    raise NotImplementedError(f"Prompt generation not yet implemented for {self.dataset}")
+                return promptFormat[self.modelName]["header"] + promptFormat[self.modelName]["content"].format(
+                    input=inp,
+                    output=out
+                ) + promptFormat[self.modelName]["footer"]
+            elif self.modelName == "unifiedqa":
+                if self.dataset == "commonsense_qa":
+                    inp += "Q: " + instance["question"] + "\nAnswer Choices:\n"
+                    corrAns = ""
+                    for c, t in zip(instance["choices"]["label"], instance["choices"]["text"]):
+                        inp += "({}) {}".format(c.lower(), t.lower())
+                        inp += "\n"
+                        if c.lower() == instance["answerKey"].lower():
+                            corrAns = t
+                    inp += "A: "
+                    if self.direct: 
+                        out += "({}).\n\n".format(instance["answerKey"].lower())
+                    else:
+                        out += "{} Therefore, the answer is {} ({}).\n\n".format(instance["rationale"], corrAns.lower(), instance["answerKey"].lower())
+                #gsm8k on HuggingFace
+                # {
+                #     "question": (string),
+                #     "answer": (string)
+                # }
+                elif self.dataset == "gsm8k": 
+                    inp += "Q: " + instance["question"] 
+                    extractedAnswer = extractAnswer(instance["answer"], self.dataset, self.direct)
+                    inp += "\nA: "
+                    if self.direct: 
+                        out += extractedAnswer["answer"]
+                    else:
+                        out += instance["answer"]
+                else: 
+                    raise NotImplementedError(f"Prompt generation not yet implemented for {self.dataset}")
+                return promptFormat[self.modelName]["header"] + promptFormat[self.modelName]["content"].format(
+                    input=inp,
+                    output=""
+                ), out + promptFormat[self.modelName]["footer"]
             else: 
-                raise NotImplementedError(f"Prompt generation not yet implemented for {self.dataset}")
-            return prompt
-        elif self.modelName == "unifiedqa":
-            if self.dataset == "commonsense_qa":
-                prompt = self.trainPrompt
-                label = ""
-                prompt += "Q: " + instance["question"] + "\nAnswer Choices:\n"
-                corrAns = ""
-                for c, t in zip(instance["choices"]["label"], instance["choices"]["text"]):
-                    prompt += "({}) {}".format(c.lower(), t.lower())
-                    prompt += "\n"
-                    if c.lower() == instance["answerKey"].lower():
-                        corrAns = t
-                prompt += "A: "
-                if self.direct: 
-                    label += "({}).\n\n".format(instance["answerKey"].lower())
-                else:
-                    label += "{} Therefore, the answer is {} ({}).\n\n".format(instance["rationale"], corrAns.lower(), instance["answerKey"].lower())
-            #gsm8k on HuggingFace
-            # {
-            #     "question": (string),
-            #     "answer": (string)
-            # }
-            elif self.dataset == "gsm8k": 
-                prompt = self.trainPrompt
-                label = ""
-                prompt += "Q: " + instance["question"] 
-                extractedAnswer = extractAnswer(instance["answer"], self.dataset, self.direct)
-                prompt += "\nA: "
-                if self.direct: 
-                    label += extractedAnswer["answer"]
-                else:
-                    label += instance["answer"]
-            else: 
-                raise NotImplementedError(f"Prompt generation not yet implemented for {self.dataset}")
-            return prompt, label
-        else: 
-            raise ValueError("{} model not supported!".format(self.modelName))
+                raise ValueError("{} model not supported!".format(self.modelName))
 
     def tokenize(self, instances):
-        if self.modelName == "gptj":
+        if self.modelName in ["gptj", "llama3.1-instruct"]:
             prompt = self._generateIndividualPrompt(instances)
             tokenizedInput = self.tokenizer(prompt, return_tensors="pt", truncation=True, padding="max_length", max_length=MAXLENGTH)
+            tokenizedInput.update({
+                "input_ids": torch.squeeze(tokenizedInput.input_ids, dim=0),
+                "attention_mask": torch.squeeze(tokenizedInput.attention_mask, dim=0),
+            })
             return tokenizedInput
         elif self.modelName == "unifiedqa":
             prompt, label = self._generateIndividualPrompt(instances)
             tokenizedInput = self.tokenizer(prompt, return_tensors="pt", truncation=True, padding="max_length", max_length=MAXLENGTH)
             tokenizedLabels = self.tokenizer(label, return_tensors="pt", truncation=True, padding="max_length", max_length=MAXLENGTH).input_ids
             tokenizedInput.update({
-                "labels": torch.squeeze(tokenizedLabels),
-                "input_ids": torch.squeeze(tokenizedInput.input_ids),
-                "attention_mask": torch.squeeze(tokenizedInput.attention_mask),
+                "labels": torch.squeeze(tokenizedLabels, dim=0),
+                "input_ids": torch.squeeze(tokenizedInput.input_ids, dim=0),
+                "attention_mask": torch.squeeze(tokenizedInput.attention_mask, dim=0),
             })
             return tokenizedInput
         else: 
@@ -359,6 +381,7 @@ def processArguments(args):
         "logFile": args.log,
         "model": args.model,
         "size": args.size,
+        "modelPath": args.modelPath,
         "dataset": args.dataset,
         "direct": args.direct,
         "trainFiles": args.trainFiles,
@@ -368,8 +391,6 @@ def processArguments(args):
         "testFiles": args.testFiles,
         "isTestDir": args.isTestDir,
         "trainPattern": args.trainPattern,
-        "deepSpeed": args.deepSpeed,
-        "deepspeed": args.deepspeed,
         "numEpochs": args.numEpochs,
         "batchSize": args.batchSize,
         "learningRate": args.learningRate,
@@ -388,8 +409,6 @@ def processArguments(args):
     if config["evaluate"]!=-1:
         if not config["evaluate"] > 0:
             raise ValueError("Value to argument: evaluate has to be positive!")
-        if config.deepSpeed:
-            raise NotImplementedError("Cannot perform evaluation when training with deepspeed!")
 
     if args.saveName:
         config.update({
@@ -503,7 +522,7 @@ def main():
             print("Using pretrained model and tokenizer from {} on HuggingFace".format(modelID))
             model = AutoModelForCausalLM.from_pretrained(modelID, load_in_8bit=True, device_map="auto")
             model.gradient_checkpointing_enable()
-            model = prepare_model_for_int8_training(model)
+            model = prepare_model_for_kbit_training(model)
             model = get_peft_model(model, loraConfig)
             for p in model.parameters():
                 p = p.contiguous()
@@ -524,12 +543,38 @@ def main():
             print("Using pretrained model and tokenizer from {} on HuggingFace".format(modelID))
             model = T5ForConditionalGeneration.from_pretrained(modelID, device_map="auto")
             model.gradient_checkpointing_enable()
-            model = prepare_model_for_int8_training(model)
+            model = prepare_model_for_kbit_training(model)
             model = get_peft_model(model, loraConfig)
             for p in model.parameters():
                 p = p.contiguous()
             tokenizer = T5Tokenizer.from_pretrained(modelID)
             tokenizer.pad_token = tokenizer.eos_token
+        else: 
+            raise ValueError("Only {} size(s) supported!".format("/".join(supportedSizes[config.model])))
+    elif config.model == "llama3.1-instruct":
+        if config.size == "8b":
+            modelID = "meta-llama/Llama-3.1-8B"
+            if config.modelPath!=modelID:
+                modelID = config.modelPath
+            model = LlamaForCausalLM.from_pretrained(
+                modelID,
+                torch_dtype=torch.bfloat16,
+                device_map="balanced",
+                cache_dir=args.cache_dir,
+                attn_implementation="flash_attention_2",
+            ) 
+
+            tokenizer = AutoTokenizer.from_pretrained(modelID, cache_dir=args.cache_dir)
+            tokenizer.add_special_tokens({"pad_token":"[PAD]"})
+            model.generation_config.pad_token_id = tokenizer.pad_token_id
+            model.resize_token_embeddings(len(tokenizer))
+            generationConfig = {
+                # "do_sample":MODEL_DO_SAMPLE,
+                # "temperature":MODEL_TEMPERATURE,
+                # "top_p":MODEL_TOP_P,
+                # "top_k":MODEL_TOP_K,
+                # "repetition_penalty":MODEL_REPETITION_PENALTY,
+            } 
         else: 
             raise ValueError("Only {} size(s) supported!".format("/".join(supportedSizes[config.model])))
     else: 
@@ -587,7 +632,7 @@ def main():
     else: 
         raise NotImplementedError("Support for {} not yet implemented!".format(config.dataset))
     
-    if config.model == "gptj":
+    if config.model in ["gptj", "llama3.1-instruct"]:
         dataCollator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
     elif config.model == "unifiedqa":
         dataCollator = DataCollatorForSeq2Seq(tokenizer=tokenizer)
@@ -611,7 +656,8 @@ def main():
             collate_fn=dataCollator
         )
 
-    optimizer = bnb.optim.Adam8bit(model.parameters(), lr=config.learningRate)
+    # optimizer = bnb.optim.Adam8bit(model.parameters(), lr=config.learningRate)
+    optimizer = AdamW(model.parameters(), lr=args.learningRate)
 
     numTrainingSteps = config.numEpochs * len(trainDataLoader)
     if config.maxSteps == -1:
@@ -636,19 +682,6 @@ def main():
         num_training_steps=numTrainingSteps,
     )
 
-    if config.deepSpeed:
-        modelEngine, modelOptimizer, _, _ = deepspeed.initialize(
-            args={
-                "zero_allow_untested_optimizer": True,
-            },
-            model=model,
-            model_parameters=model.parameters(),
-            optimizer=optimizer,
-            lr_scheduler=lrScheduler,
-            collate_fn=dataCollator,
-            config=config.deepspeed,
-        )
-
     progressBar = tqdm(range(numTrainingSteps))
 
     bestLoss = np.inf
@@ -661,18 +694,14 @@ def main():
             numSteps += 1
             batchInd += 1
             batch = {k: v.to(device) for k, v in batch.items()}
-            if config.deepSpeed:
-                loss = modelEngine(batch)
-                modelEngine.backward(loss)
-                modelEngine.step()
-            else:
-                outputs = model(**batch)
-                loss = outputs.loss 
-                loss = Variable(loss, requires_grad = True)
-                loss.backward()
-                optimizer.step()
-                lrScheduler.step()
-                optimizer.zero_grad()
+            logging.info(batch["attention_mask"].shape)
+            outputs = model(**batch)
+            loss = outputs.loss 
+            loss = Variable(loss, requires_grad = True)
+            loss.backward()
+            optimizer.step()
+            lrScheduler.step()
+            optimizer.zero_grad()
             avgLoss += loss.item()
             progressBar.update(1)
             #Update
@@ -686,6 +715,7 @@ def main():
                 model.save_pretrained(f"{config.saveModelPath}{config.saveModelName}", from_pt=True) 
                 tokenizer.save_pretrained(f"{config.saveModelPath}{config.saveModelName}", from_pt=True)
             if config.evaluate!=-1 and numSteps%config.evaluate==0:
+                raise NotImplementedError("Evaluation: In progress...")
                 model.eval()
                 with torch.no_grad():
                     for testBatch in tqdm(testDataLoader, desc="Batch"):
@@ -695,9 +725,8 @@ def main():
                         testOutputIDs = testLogits.argmax(-1)
                         testGenText = tokenizer.batch_decode(testOutputIDs)
                         testInpText = tokenizer.batch_decode(torch.squeeze(testBatch["input_ids"]))
-                        for inp, out in zip(inpText, genText):
-                            extractedAnswer = extractAnswer(instance["answer"], self.dataset, self.direct)
-                            raise NotImplementedError("Evaluation: In progress...")
+                        for inp, out in zip(testInpText, testGenText):
+                            extractedAnswer = extractAnswer(instance["answer"], args.dataset, args.direct)
                 model.train()
             if math.isclose(avgLoss, 0):
                 break

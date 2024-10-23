@@ -4,12 +4,10 @@ import wandb
 import logging
 import torch
 import transformers
-from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer, AutoConfig, T5Tokenizer
+from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer, AutoConfig, T5Tokenizer, LlamaForCausalLM
 from datasets import load_dataset
 import numpy as np
 import json
-import deepspeed
-from deepspeed.ops.transformer.inference import DeepSpeedTransformerInference
 import json
 from tqdm import tqdm
 import regex as re
@@ -27,13 +25,44 @@ MODEL_DO_SAMPLE=True
 MODEL_REPETITION_PENALTY=1.0
 MAX_LENGTH=4096
 
-supportedModels = ["gptj", "unifiedqa"]
+supportedModels = ["gptj", "unifiedqa", "llama3.1-instruct"]
 supportedSizes = {
     "gptj": ["6b"],
     "unifiedqa": ["3b"],
+    "llama3.1-instruct": ["8b"]
 }
 supportedDatasets = ["commonsense_qa", "gsm8k", "arithmetic"]
 supportedHFDatasets = ["commonsense_qa", "gsm8k"]
+
+promptHeader = {
+    "gptj": "",
+    "unifiedqa": "",
+    "llama3.1-instruct": """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+
+You are a helpful assistant<|eot_id|>""",
+}
+
+promptFormat = {
+    "gptj": {
+        "header": "",
+        "content": "{input}{output}",
+        "footer": "",
+    },
+    "unifiedqa": {
+        "header": "",
+        "content": "{input}{output}",
+        "footer": "",
+    },
+    "llama3.1-instruct": {
+        "header": """<|start_header_id|>user<|end_header_id|>
+
+""",
+        "content": """{input}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+
+{output}""",
+        "footer": "<|eot_id|>",
+    },
+}
 
 parser = argparse.ArgumentParser()
 
@@ -42,6 +71,13 @@ parser.add_argument(
     type=str,
     help="Path to file to print logging information",
     default=None
+)
+
+parser.add_argument(
+    "-cache_dir",
+    type=str,
+    help="Path to HF cache",
+    required=True
 )
 
 parser.add_argument(
@@ -139,12 +175,6 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "-deepSpeed",
-    action="store_true",
-    help="Boolean flag to indicate execution through deepspeed"
-)
-
-parser.add_argument(
     "-out",
     help="Path to directory where outputs are to be saved",
     default="./inferenceOuts/"
@@ -161,32 +191,12 @@ parser.add_argument(
     action="store_true",
     help="Boolean flag to enable rationalization"
 )
-
-#Arguments for DeepSpeed
-parser.add_argument(
-    "--local_rank", 
-    type=int, 
-    help="[DEEPSPEED ARGUMENT]",
-    default=0
-)
-
-parser.add_argument(
-    "--do_eval",
-    action="store_true",
-    help="[DEEPSPEED ARGUMENT] Boolean flag to enable inference mode"
-)
-
-parser.add_argument(
-    "--deepspeed", 
-    help="[DEEPSPEED ARGUMENT] Path to deepspeed configuration"
-)
-
 #---------------------------------------------------------------------------
 def _generateIndividualPrompt(instance, dataset, model, direct=False, rationalize=False, isTest=False):
     if dataset not in supportedDatasets:
         raise ValueError(f"{dataset} not supported!")
     
-    prompt = ""
+    inp, out = "", ""
     
     #commonsense_qa on HuggingFace
     # {
@@ -201,32 +211,32 @@ def _generateIndividualPrompt(instance, dataset, model, direct=False, rationaliz
     if dataset == "commonsense_qa":
         if not direct and not isTest: 
             raise ValueError("Only direct prompting supported with commonsense_qa dataset on HuggingFace!")
-        prompt += "Q: " + instance["question"] + "\nAnswer Choices:\n"
+        inp += "Q: " + instance["question"] + "\nAnswer Choices:\n"
         for c, t in zip(instance["choices"]["label"], instance["choices"]["text"]):
-            prompt += "({}) {}".format(c.lower(), t.lower())
+            inp += "({}) {}".format(c.lower(), t.lower())
             if rationalize:
                 if c == instance["answerKey"]:
-                    prompt += " (CORRECT)" 
-            prompt += "\n"
-        prompt += "A: "
+                    inp += " (CORRECT)" 
+            inp += "\n"
+        inp += "A: "
         if not isTest: 
-            prompt += "({}).\n\n".format(instance["answerKey"].lower())
+            out += "({}).\n\n".format(instance["answerKey"].lower())
     #gsm8k on HuggingFace
     # {
     #     "question": (string),
     #     "answer": (string)
     # }
     elif dataset == "gsm8k": 
-        prompt += "Q: " + instance["question"] 
+        inp += "Q: " + instance["question"] 
         extractedAnswer = extractAnswer(instance["answer"], dataset, direct)
         if rationalize:
-            prompt += " ({})".format(extractedAnswer["answer"]) 
-        prompt += "\nA: "
+            inp += " ({})".format(extractedAnswer["answer"]) 
+        inp += "\nA: "
         if not isTest: 
             if direct:
-                prompt += extractedAnswer["answer"] + "\n\n"
+                out += extractedAnswer["answer"] + "\n\n"
             else:
-                prompt += instance["answer"] + "\n\n"
+                out += instance["answer"] + "\n\n"
     #arithmetic (Not on Huggingface)
     # {
     #     "question": (string),
@@ -234,15 +244,23 @@ def _generateIndividualPrompt(instance, dataset, model, direct=False, rationaliz
     #     "scratch": (string), [OPTIONAL]
     # }
     elif dataset == "arithmetic": 
-        prompt += "Input:\n" + instance["question"].strip() 
-        prompt += "\nTarget:\n"
+        inp += "Input:\n" + instance["question"].strip() 
+        inp += "\nTarget:\n"
         if rationalize:
-            prompt += instance["answer"] + "\n\n"
+            inp += instance["answer"] + "\n\n"
         if not isTest: 
             if not direct: 
-                prompt += instance["scratch"].strip() + "\n"
-            prompt += instance["answer"] + "\n\n"
-    return prompt
+                out += instance["scratch"].strip() + "\n"
+            out += instance["answer"] + "\n\n"
+    if isTest:
+        return promptFormat[model]["header"] + promptFormat[model]["content"].format(
+            input=inp,
+            output=""
+        )
+    return promptFormat[model]["header"] + promptFormat[model]["content"].format(
+        input=inp,
+        output=out
+    ) + promptFormat[model]["footer"]
 
 #---------------------------------------------------------------------------
 def _generatePrompt(data, dataset, model, maxShots, direct=False, rationalize=False, isTest=False):
@@ -364,7 +382,6 @@ def processArguments(args):
         "testFiles": args.testFiles,
         "isTestDir": args.isTestDir,
         "testPattern": args.testPattern,
-        "deepSpeed": args.deepSpeed,
         "outPath": args.out,
         "saveAs": args.saveAs,
         "rationalize": args.rationalize,
@@ -442,32 +459,21 @@ def processArguments(args):
         
     return config
 #---------------------------------------------------------------------------
-def infer(model, modelName, tokenizer, prompt, generationConfig={}, deepSpeed=False, dsModel=None):
+def infer(model, modelName, tokenizer, prompt, generationConfig={}):
     tokenizedInput = tokenizer(prompt, return_tensors="pt")
     inputIDs = tokenizedInput.input_ids.to(device=model.device)
     attentionMask = tokenizedInput.attention_mask.to(device=model.device)
 
     print(prompt)
 
-    if deepSpeed:
-        if not dsModel:
-            raise RuntimeError(f"dsModel not passed to infer()!")
-        genTokens = dsModel.module.generate(
-            input_ids=inputIDs,
-            attention_mask=attentionMask,
-            max_new_tokens=MODEL_MAX_NEW_TOKENS,
-            pad_token_id=tokenizer.eos_token_id,
-            **generationConfig,
-        )
-    else:
-        genTokens = model.generate(
-            input_ids=inputIDs,
-            attention_mask=attentionMask,
-            max_new_tokens=MODEL_MAX_NEW_TOKENS,
-            pad_token_id=tokenizer.eos_token_id,
-            **generationConfig,
-        )
-    if modelName == "gptj":
+    genTokens = model.generate(
+        input_ids=inputIDs,
+        attention_mask=attentionMask,
+        max_new_tokens=MODEL_MAX_NEW_TOKENS,
+        pad_token_id=tokenizer.eos_token_id,
+        **generationConfig,
+    )
+    if modelName == "gptj" or modelName == "llama3.1-instruct":
         outputIDs = genTokens[0, len(inputIDs[0]):]
     else: 
         outputIDs = genTokens[0, :]
@@ -537,24 +543,37 @@ def main():
                 }  
         else: 
             raise ValueError("Only {} size(s) supported!".format("/".join(supportedSizes[config.model])))
+    elif config.model == "llama3.1-instruct":
+        if config.size == "8b":
+            modelID = "meta-llama/Llama-3.1-8B"
+            if config.modelPath!=modelID:
+                modelID = config.modelPath
+            model = LlamaForCausalLM.from_pretrained(
+                modelID,
+                torch_dtype=torch.bfloat16,
+                device_map="balanced",
+                cache_dir=args.cache_dir,
+                attn_implementation="flash_attention_2",
+            ) 
+
+            tokenizer = AutoTokenizer.from_pretrained(modelID, cache_dir=args.cache_dir)
+            tokenizer.add_special_tokens({"pad_token":"[PAD]"})
+            model.generation_config.pad_token_id = tokenizer.pad_token_id
+            model.resize_token_embeddings(len(tokenizer))
+            generationConfig = {
+                # "do_sample":MODEL_DO_SAMPLE,
+                # "temperature":MODEL_TEMPERATURE,
+                # "top_p":MODEL_TOP_P,
+                # "top_k":MODEL_TOP_K,
+                # "repetition_penalty":MODEL_REPETITION_PENALTY,
+            } 
+        else: 
+            raise ValueError("Only {} size(s) supported!".format("/".join(supportedSizes[config.model])))
     else: 
         raise ValueError("Only {} model(s) supported!".format("/".join(supportedModels)))
     
-    if config.deepSpeed:
-        if model.dtype == torch.float32:
-            model.to(device=args.local_rank)    
-        dsModel = deepspeed.init_inference(
-            model=model,
-            # dtype=torch.half,
-            mp_size=1,
-            replace_with_kernel_inject=True,
-            max_out_tokens=MAX_LENGTH,
-        )
-        # assert isinstance(dsModel.module.transformer.h[0], DeepSpeedTransformerInference) == True, "Model not sucessfully initalized"
-    else: 
-        dsModel = None
-        if model.dtype == torch.float32:
-            model.to(device=device)
+    if model.dtype == torch.float32:
+        model.to(device=device)
     
     if config.dataset not in supportedDatasets:
         raise ValueError("Only {} dataset(s) supported!".format("/".join(supportedDatasets)))
@@ -572,10 +591,6 @@ def main():
         print("Performing rationalization")
     else: 
         print("Not performing rationalization")
-    if config.deepSpeed:
-        print(f"Inference using DeepSpeed")
-    else:
-        print(f"Inference without using DeepSpeed")
     
     with torch.no_grad():
         for trainInd, trainFile in enumerate(tqdm(config.trainFiles, desc="Train File")):
@@ -642,11 +657,11 @@ def main():
                     testPrompt = generateTestPrompt(testInstance, config.dataset, config.model, config.maxShots, config.direct, False)
 
                     if not config.zeroShot:
-                        finalPrompt = trainPrompt + testPrompt
+                        finalPrompt = promptHeader[config.model] + trainPrompt + testPrompt
                     else:
-                        finalPrompt = testPrompt         
+                        finalPrompt = promptHeader[config.model] + testPrompt         
 
-                    genText = infer(model, config.model, tokenizer, finalPrompt, generationConfig, config.deepSpeed, dsModel)
+                    genText = infer(model, config.model, tokenizer, finalPrompt, generationConfig)
 
                     extractedAnswer = extractAnswer(genText, config.dataset, config.direct)
                     if extractedAnswer == None:
@@ -717,7 +732,7 @@ def main():
                                 rationalizedFinalPrompt = rationalizedTrainPrompt + rationalizedTestPrompt
                             else:
                                 rationalizedFinalPrompt = rationalizedTestPrompt 
-                            genText = infer(model, config.model, tokenizer, rationalizedFinalPrompt, generationConfig, config.deepSpeed, dsModel)
+                            genText = infer(model, config.model, tokenizer, rationalizedFinalPrompt, generationConfig)
                             extractedAnswer = extractAnswer(genText, config.dataset, config.direct)
                             if extractedAnswer == None:
                                 continue
@@ -782,15 +797,15 @@ def main():
                     config.outPath += "/"
                 if not os.path.exists(f"{config.outPath}{config.saveAs}"):
                     os.makedirs(f"{config.outPath}{config.saveAs}")
-                with open(f'{config.outPath}{config.saveAs}/{config.saveAs}_{trainFile.split("/")[-1].split(".")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}.json', 'w') as fout:
+                with open(f'{config.outPath}{config.saveAs}/{config.saveAs}_{trainFile.split("/")[-1].split(".")[0].split("_")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}.json', 'w') as fout:
                     json.dump(outputs , fout)
-                with open(f'{config.outPath}{config.saveAs}/{config.saveAs}_{trainFile.split("/")[-1].split(".")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_correct.json', 'w') as fout:
+                with open(f'{config.outPath}{config.saveAs}/{config.saveAs}_{trainFile.split("/")[-1].split(".")[0].split("_")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_correct.json', 'w') as fout:
                     json.dump(correctPreds , fout)
-                with open(f'{config.outPath}{config.saveAs}/{config.saveAs}_{trainFile.split("/")[-1].split(".")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_wrong.json', 'w') as fout:
+                with open(f'{config.outPath}{config.saveAs}/{config.saveAs}_{trainFile.split("/")[-1].split(".")[0].split("_")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_wrong.json', 'w') as fout:
                     json.dump(wrongPreds , fout)
-                with open(f'{config.outPath}{config.saveAs}/{config.saveAs}_{trainFile.split("/")[-1].split(".")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_rationalizedCorrect.json', 'w') as fout:
+                with open(f'{config.outPath}{config.saveAs}/{config.saveAs}_{trainFile.split("/")[-1].split(".")[0].split("_")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_rationalizedCorrect.json', 'w') as fout:
                     json.dump(rationalizedCorrectPreds , fout)
-                with open(f'{config.outPath}{config.saveAs}/{config.saveAs}_{trainFile.split("/")[-1].split(".")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_rationalizedWrong.json', 'w') as fout:
+                with open(f'{config.outPath}{config.saveAs}/{config.saveAs}_{trainFile.split("/")[-1].split(".")[0].split("_")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_rationalizedWrong.json', 'w') as fout:
                     json.dump(rationalizedWrongPreds , fout)
             
     wandb.finish()
