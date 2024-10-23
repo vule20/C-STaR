@@ -1,0 +1,5 @@
+Jenna's Notes on Running STaRC
+
+
+sbatch jennaInference.sh -m "gptj" -l 6b -p -t "./datasets/commonsense_qa/prompts.txt" -h "./datasets/commonsense_qa/promptsWithHints.txt"
+
