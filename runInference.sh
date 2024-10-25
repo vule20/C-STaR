@@ -8,7 +8,7 @@
 #SBATCH -t 1:00:00
 #SBATCH --exclude=gypsum-gpu043
 
-SAMPLE_USAGE='sbatch runInference.sh -m starcEnv.1-instruct -l 8b -r -p -t "./datasets/commonsense_qa/prompts_starcEnv.txt" -h ./datasets/commonsense_qa/promptsWithHints_starcEnv.txt -v train'
+SAMPLE_USAGE='sbatch runInference.sh -m llama3.1-instruct -l 8b -r -p -t "./datasets/commonsense_qa/prompts_llama3.txt" -h ./datasets/commonsense_qa/promptsWithHints_llama3.txt -v train'
 
 DIRECT=false
 TRAINPROMPTS=false
@@ -23,12 +23,12 @@ HINTTRAINPROMPTS="./datasets/commonsense_qa/promptsWithHints.txt"
 TEST="validation"
 TRAINPATT=".*/.*\\.json"
 TESTPATT=".*/.*\\.json"
-MODEL="starcEnv.1-instruct"
+MODEL="llama3.1-instruct"
 MODELSIZE="8b"
 DATASET="commonsense_qa"
 OUTPUT="./inferenceOuts/"
 MAXSHOTS=9
-MODELPATH="/datasets/ai/starcEnv/meta-llama/models--meta-llama--Meta-Llama-3.1-8B-Instruct/snapshots/5206a32e0bd3067aef1ce90f5528ade7d866253f/"
+MODELPATH="/datasets/ai/llama3/meta-llama/models--meta-llama--Meta-Llama-3.1-8B-Instruct/snapshots/5206a32e0bd3067aef1ce90f5528ade7d866253f/"
 SAVEAS="base"
 
 UNCERTAINTY=false

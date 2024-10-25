@@ -8,7 +8,7 @@
 #SBATCH -t 1:00:00
 #SBATCH --exclude=gypsum-gpu043
 
-SAMPLE_USAGE='sbatch runFinetuning.sh -m starcEnv.1-instruct -l 8b -u testing -t "./inferenceOuts/base/prompts_train_commonsense_qa_correct.json ./inferenceOuts/base/prompts_train_commonsense_qa_rationalizedCorrect.json"'
+SAMPLE_USAGE='sbatch runFinetuning.sh -m llama3.1-instruct -l 8b -u testing -t "./inferenceOuts/base/prompts_train_commonsense_qa_correct.json ./inferenceOuts/base/prompts_train_commonsense_qa_rationalizedCorrect.json"'
 
 DIRECT=false
 FINETUNE=false
@@ -29,7 +29,7 @@ BATCHSIZE=8
 LEARNINGRATE=5e-3
 NUMEPOCHS=1
 MODELNAME="UnifiedQA3BFineTuned"
-MODELPATH="/datasets/ai/starcEnv/meta-llama/models--meta-llama--Meta-Llama-3.1-8B-Instruct/snapshots/5206a32e0bd3067aef1ce90f5528ade7d866253f/"
+MODELPATH="/datasets/ai/llama3/meta-llama/models--meta-llama--Meta-Llama-3.1-8B-Instruct/snapshots/5206a32e0bd3067aef1ce90f5528ade7d866253f/"
 SAVEAS="base"
 MAXSTEPS=40
 TRAINPROMPT="None"
