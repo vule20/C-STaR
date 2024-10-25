@@ -191,6 +191,25 @@ parser.add_argument(
     action="store_true",
     help="Boolean flag to enable rationalization"
 )
+
+parser.add_argument(
+    "-uncertainty",
+    action="store_true",
+    help="Boolean flag to enable uncertainty computation"
+)
+
+parser.add_argument(
+    "-method",
+    type=str,
+    choices=["ppl"],
+    help="Type of uncertainty method to use",
+    default="ppl"
+)
+
+parser.add_argument(
+    "-methodParam",
+    help="Parameter for uncertainty method",
+)
 #---------------------------------------------------------------------------
 def _generateIndividualPrompt(instance, dataset, model, direct=False, rationalize=False, isTest=False):
     if dataset not in supportedDatasets:
@@ -386,6 +405,9 @@ def processArguments(args):
         "saveAs": args.saveAs,
         "rationalize": args.rationalize,
         "hintTrainPrompts": args.hintTrainPrompts,
+        "uncertainty": args.uncertainty,
+        "method": args.method,
+        "methodParam": args.methodParam
     }
 
     if config["logFile"]:
@@ -480,6 +502,56 @@ def infer(model, modelName, tokenizer, prompt, generationConfig={}):
     genText = tokenizer.decode(outputIDs)
     return genText 
 #---------------------------------------------------------------------------
+def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="ppl"):
+    if method=="ppl":
+        if modelName == "gptj" or modelName == "llama3.1-instruct":
+            input_ids = tokenizer.encode(
+                prompt + response,
+                padding="longest",
+                truncation=True,
+                return_tensors="pt"
+            )
+            response_ids = tokenizer.encode(
+                response,
+                padding="longest",
+                truncation=True,
+                return_tensors="pt"
+            )
+            target_ids = input_ids.clone()
+            target_ids[0, :-response_ids.shape[-1]] = -100
+        elif modelName == "unifiedqa":
+            input_ids = tokenizer.encode(
+                prompt,
+                padding="longest",
+                truncation=True,
+                return_tensors="pt"
+            )
+            response_ids = tokenizer.encode(
+                response,
+                padding="longest",
+                truncation=True,
+                return_tensors="pt"
+            )
+            target_ids = response_ids
+        else: 
+            raise ValueError("Unrecognized model: {}".format(modelName))
+        outputs = model(
+            input_ids=input_ids,
+            labels=target_ids
+        ) 
+        ppl = np.exp(outputs.loss.item())
+        return ppl
+    else: 
+        raise ValueError("Unrecognized uncertainty quantification method: {}".format(method))
+#---------------------------------------------------------------------------
+def is_uncertain(uncertainty, method_param, method="ppl"):
+    if method=="ppl":
+        if uncertainty > float(method_param):
+            return True 
+        return False
+    else: 
+        raise ValueError("Unrecognized uncertainty quantification method: {}".format(method))
+#---------------------------------------------------------------------------
 def main():
     args = parser.parse_args()
 
@@ -553,7 +625,7 @@ def main():
                 torch_dtype=torch.bfloat16,
                 device_map="balanced",
                 cache_dir=args.cache_dir,
-                attn_implementation="flash_attention_2",
+                # attn_implementation="flash_attention_2",
             ) 
 
             tokenizer = AutoTokenizer.from_pretrained(modelID, cache_dir=args.cache_dir)
@@ -721,6 +793,16 @@ def main():
                             accuracyScore += 1
                             correctPreds.append(testInstance)
                             curInstanceCorrect = True
+
+                    if config.uncertainty:
+                        uncertainty = compute_uncertainty(model, config.model, tokenizer, finalPrompt, rationale, config.method)
+                        model_uncertain = is_uncertain(uncertainty, config.methodParam, config.method)
+                        curInstanceCorrect = model_uncertain
+                        wandb.log({
+                            "testInstance": testInstance,
+                            "uncertainty": uncertainty,
+                            "is_uncertain": model_uncertain
+                        })
 
                     if not curInstanceCorrect: 
                         wrongPreds.append(testInstance)

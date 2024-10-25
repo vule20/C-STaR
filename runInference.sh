@@ -1,6 +1,6 @@
 #!/bin/bash -l
 #SBATCH -J run_test
-#SBATCH --partition=superpod-a100 #current best free gpu partition
+#SBATCH --partition=gpu-preempt #current best free gpu partition
 #SBATCH -N 1
 #SBATCH --output=slurm/log_test_%j.out
 #SBATCH --gres=gpu:a100:2
@@ -31,10 +31,16 @@ MAXSHOTS=9
 MODELPATH="/datasets/ai/llama3/meta-llama/models--meta-llama--Meta-Llama-3.1-8B-Instruct/snapshots/5206a32e0bd3067aef1ce90f5528ade7d866253f/"
 SAVEAS="base"
 
+UNCERTAINTY=false
+METHOD="ppl"
+METHODPARAM=2
 
-while getopts 'a:g:h:j:k:l:m:no:pq:rs:t:v:w:xyz' opt; do
+
+while getopts 'a:c:d:g:h:j:k:l:m:no:pq:rs:t:uv:w:xyz' opt; do
   case "$opt" in
     a)   LOGFILE="$OPTARG"  ;;
+    c)   METHOD="$OPTARG"  ;;
+    d)   METHODPARAM="$OPTARG"  ;;
     g)  DATASET="$OPTARG"   ;;
     h)   HINTTRAINPROMPTS="$OPTARG"  ;;
     j)   TRAINPATT="$OPTARG"     ;;
@@ -48,6 +54,7 @@ while getopts 'a:g:h:j:k:l:m:no:pq:rs:t:v:w:xyz' opt; do
     r)   RATIONALIZE=true  ;;
     s)   MAXSHOTS="$OPTARG"     ;;
     t) TRAIN="$OPTARG" ;;
+    u)   UNCERTAINTY=true  ;;
     v) TEST="$OPTARG" ;;
     w)  SAVEAS="$OPTARG" ;;
     x)   ISTRAINDIR=true     ;;
@@ -62,7 +69,8 @@ export PYTHONPATH=/work/pi_miyyer_umass_edu/rrajendhran/miniconda3/envs/llama3/b
 source /work/pi_miyyer_umass_edu/rrajendhran/miniconda3/etc/profile.d/conda.sh
 conda activate llama3
 
-wandb disabled
+# wandb disabled
+# export WANDB_MODE=disabled
 # mkdir /work/pi_miyyer_umass_edu/rrajendhran/huggingface_cache
 export HF_HOME="/work/pi_miyyer_umass_edu/rrajendhran/huggingface_cache"
 export HF_DATASETS_CACHE="/work/pi_miyyer_umass_edu/rrajendhran/huggingface_cache"
@@ -95,6 +103,10 @@ fi ;
 
 if [ "$ZEROSHOT" = true ] ; then
     FLAGS+=" -zeroShot"
+fi ;
+
+if [ "$UNCERTAINTY" = true ] ; then
+    FLAGS+=" -uncertainty -method ${METHOD} -methodParam ${METHODPARAM}"
 fi ;
 
 FLAGS+=" -trainFiles $TRAIN -testFiles ${TEST} -model ${MODEL} -size ${MODELSIZE} -dataset ${DATASET} -maxShots ${MAXSHOTS} -trainPattern ${TRAINPATT} -testPattern ${TESTPATT} -log ${LOGFILE} -modelPath ${MODELPATH} -saveAs ${SAVEAS}"
