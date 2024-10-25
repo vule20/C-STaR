@@ -8,7 +8,7 @@
 #SBATCH -t 1:00:00
 #SBATCH --exclude=gypsum-gpu043
 
-SAMPLE_USAGE='sbatch runFinetuning.sh -m llama3.1-instruct -l 8b -u testing -t "./inferenceOuts/base/base_prompts_llama3_train_commonsense_qa_correct.json ./inferenceOuts/base/base_prompts_llama3_train_commonsense_qa_rationalizedCorrect.json"'
+SAMPLE_USAGE='sbatch runFinetuning.sh -m starcEnv.1-instruct -l 8b -u testing -t "./inferenceOuts/base/prompts_train_commonsense_qa_correct.json ./inferenceOuts/base/prompts_train_commonsense_qa_rationalizedCorrect.json"'
 
 DIRECT=false
 FINETUNE=false
@@ -24,12 +24,12 @@ TESTPATT=".*/.*\\.json"
 MODEL="unifiedqa"
 MODELSIZE="3b"
 DATASET="commonsense_qa"
-SAVEMODELPATH="./model_outputs/"
+SAVEMODELPATH="./modelOutputs/"
 BATCHSIZE=8
 LEARNINGRATE=5e-3
 NUMEPOCHS=1
 MODELNAME="UnifiedQA3BFineTuned"
-MODELPATH="/datasets/ai/llama3/meta-llama/models--meta-llama--Meta-Llama-3.1-8B-Instruct/snapshots/5206a32e0bd3067aef1ce90f5528ade7d866253f/"
+MODELPATH="/datasets/ai/starcEnv/meta-llama/models--meta-llama--Meta-Llama-3.1-8B-Instruct/snapshots/5206a32e0bd3067aef1ce90f5528ade7d866253f/"
 SAVEAS="base"
 MAXSTEPS=40
 TRAINPROMPT="None"
@@ -62,17 +62,18 @@ while getopts 'a:b:c:e:g:j:k:l:m:n:p:q:r:s:t:u:v:w:xy' opt; do
   esac
 done
 
-export PYTHONPATH=/work/pi_miyyer_umass_edu/rrajendhran/miniconda3/envs/llama3/bin/python
+export PYTHONPATH=/work/pi_miyyer_umass_edu/rrajendhran/miniconda3/envs/starcEnv/bin/python
 source /work/pi_miyyer_umass_edu/rrajendhran/miniconda3/etc/profile.d/conda.sh
-conda activate llama3
+conda activate starcEnv
 
 wandb disabled
+export WANDB_MODE=disabled
 # mkdir /work/pi_miyyer_umass_edu/rrajendhran/huggingface_cache
 export HF_HOME="/work/pi_miyyer_umass_edu/rrajendhran/huggingface_cache"
 export HF_DATASETS_CACHE="/work/pi_miyyer_umass_edu/rrajendhran/huggingface_cache"
-module load cuda/12.4.0
+module load cuda/12.6
 
-export WANDB_API_KEY="9907271fbe6f6516b55140d83cc87a471d4835e9"
+export WANDB_API_KEY=""
 export TOKENIZERS_PARALLELISM=true
 
 ADDITIONAL="-cache_dir ${HF_HOME}"

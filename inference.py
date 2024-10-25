@@ -879,15 +879,16 @@ def main():
                     config.outPath += "/"
                 if not os.path.exists(f"{config.outPath}{config.saveAs}"):
                     os.makedirs(f"{config.outPath}{config.saveAs}")
-                with open(f'{config.outPath}{config.saveAs}/{config.saveAs}_{trainFile.split("/")[-1].split(".")[0].split("_")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}.json', 'w') as fout:
+                logging.info(f"Saving inference outputs at {config.outPath}{config.saveAs}")
+                with open(f'{config.outPath}{config.saveAs}/{trainFile.split("/")[-1].split(".")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}.json', 'w') as fout:
                     json.dump(outputs , fout)
-                with open(f'{config.outPath}{config.saveAs}/{config.saveAs}_{trainFile.split("/")[-1].split(".")[0].split("_")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_correct.json', 'w') as fout:
+                with open(f'{config.outPath}{config.saveAs}/{trainFile.split("/")[-1].split(".")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_correct.json', 'w') as fout:
                     json.dump(correctPreds , fout)
-                with open(f'{config.outPath}{config.saveAs}/{config.saveAs}_{trainFile.split("/")[-1].split(".")[0].split("_")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_wrong.json', 'w') as fout:
+                with open(f'{config.outPath}{config.saveAs}/{trainFile.split("/")[-1].split(".")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_wrong.json', 'w') as fout:
                     json.dump(wrongPreds , fout)
-                with open(f'{config.outPath}{config.saveAs}/{config.saveAs}_{trainFile.split("/")[-1].split(".")[0].split("_")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_rationalizedCorrect.json', 'w') as fout:
+                with open(f'{config.outPath}{config.saveAs}/{trainFile.split("/")[-1].split(".")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_rationalizedCorrect.json', 'w') as fout:
                     json.dump(rationalizedCorrectPreds , fout)
-                with open(f'{config.outPath}{config.saveAs}/{config.saveAs}_{trainFile.split("/")[-1].split(".")[0].split("_")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_rationalizedWrong.json', 'w') as fout:
+                with open(f'{config.outPath}{config.saveAs}/{trainFile.split("/")[-1].split(".")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_rationalizedWrong.json', 'w') as fout:
                     json.dump(rationalizedWrongPreds , fout)
             
     wandb.finish()
