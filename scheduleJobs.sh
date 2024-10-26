@@ -1,10 +1,12 @@
 #!/bin/bash -l
-#SBATCH -J run_test
-#SBATCH --partition=superpod-a100 #current best free gpu partition
-#SBATCH -N 1
+#SBATCH -J starc-compsci-682
+#SBATCH --partition=gpu-preempt
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-gpu=16
 #SBATCH --output=slurm/log_test_%j.out
 #SBATCH --gres=gpu:a100:2
-#SBATCH --mem=480G
+#SBATCH --mem=120G
 #SBATCH -t 1:00:00
 #SBATCH --exclude=gypsum-gpu043
 
@@ -54,17 +56,18 @@ if (($ENDITERATION == $ITERATION)); then
     exit 1; 
 fi
 
-export PYTHONPATH=/work/pi_miyyer_umass_edu/rrajendhran/miniconda3/envs/starcEnv/bin/python
-source /work/pi_miyyer_umass_edu/rrajendhran/miniconda3/etc/profile.d/conda.sh
-conda activate starcEnv
-
+conda activate llama3
 wandb disabled
+
 export WANDB_MODE=disabled
-# mkdir /work/pi_miyyer_umass_edu/rrajendhran/huggingface_cache
-export HF_HOME="/work/pi_miyyer_umass_edu/rrajendhran/huggingface_cache"
-export HF_DATASETS_CACHE="/work/pi_miyyer_umass_edu/rrajendhran/huggingface_cache"
-export TRANSFORMERS_CACHE="/work/pi_miyyer_umass_edu/rrajendhran/huggingface_cache"
+
+export HF_HOME="/work/$SLURM_JOB_ACCOUNT/$USER/huggingface_cache"
+export HF_DATASETS_CACHE="/work/$SLURM_JOB_ACCOUNT/$USER/huggingface_cache"
+export TRANSFORMERS_CACHE="/work/$SLURM_JOB_ACCOUNT/$USER/huggingface_cache"
 export TOKENIZERS_PARALLELISM=true
+
+mkdir -p $HF_HOME
+
 module load cuda/12.6
 
 export WANDB_API_KEY=""
