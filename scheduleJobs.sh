@@ -22,10 +22,10 @@ LOGFILE="stdout"
 TRAINSPLIT="train"
 VALSPLIT="validation"
 DATASET="commonsense_qa"
-MODEL="starcEnv.1-instruct"
+MODEL="llama3.1-instruct"
 MODELSIZE="8b"
-ORIGINALMODELPATH="/datasets/ai/starcEnv/meta-llama/models--meta-llama--Meta-Llama-3.1-8B-Instruct/snapshots/5206a32e0bd3067aef1ce90f5528ade7d866253f/"
-OLDMODELPATH="/datasets/ai/starcEnv/meta-llama/models--meta-llama--Meta-Llama-3.1-8B-Instruct/snapshots/5206a32e0bd3067aef1ce90f5528ade7d866253f/"
+ORIGINALMODELPATH="/datasets/ai/llama3/meta-llama/models--meta-llama--Meta-Llama-3.1-8B-Instruct/snapshots/5206a32e0bd3067aef1ce90f5528ade7d866253f/"
+OLDMODELPATH="/datasets/ai/llama3/meta-llama/models--meta-llama--Meta-Llama-3.1-8B-Instruct/snapshots/5206a32e0bd3067aef1ce90f5528ade7d866253f/"
 
 UNCERTAINTY=false
 METHOD="ppl"
