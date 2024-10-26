@@ -8,7 +8,7 @@
 #SBATCH -t 1:00:00
 #SBATCH --exclude=gypsum-gpu043
 
-SAMPLE_USAGE='sbatch runInference.sh -m llama3.1-instruct -l 8b -p -t "./datasets/commonsense_qa/prompts_llama3.txt" -h ./datasets/commonsense_qa/promptsWithHints_llama3.txt -v train'
+SAMPLE_USAGE='sbatch runInference.sh -m llama3.1-instruct -l 8b -r -p -t "./datasets/commonsense_qa/prompts_llama3.txt" -h ./datasets/commonsense_qa/promptsWithHints_llama3.txt -v train'
 
 DIRECT=false
 TRAINPROMPTS=false
@@ -65,18 +65,18 @@ while getopts 'a:c:d:g:h:j:k:l:m:no:pq:rs:t:uv:w:xyz' opt; do
   esac
 done
 
-export PYTHONPATH=/work/pi_miyyer_umass_edu/rrajendhran/miniconda3/envs/llama3/bin/python
+export PYTHONPATH=/work/pi_miyyer_umass_edu/rrajendhran/miniconda3/envs/starcEnv/bin/python
 source /work/pi_miyyer_umass_edu/rrajendhran/miniconda3/etc/profile.d/conda.sh
-conda activate llama3
+conda activate starcEnv
 
-# wandb disabled
-# export WANDB_MODE=disabled
+wandb disabled
+export WANDB_MODE=disabled
 # mkdir /work/pi_miyyer_umass_edu/rrajendhran/huggingface_cache
 export HF_HOME="/work/pi_miyyer_umass_edu/rrajendhran/huggingface_cache"
 export HF_DATASETS_CACHE="/work/pi_miyyer_umass_edu/rrajendhran/huggingface_cache"
-module load cuda/12.4.0
+module load cuda/12.6
 
-export WANDB_API_KEY="9907271fbe6f6516b55140d83cc87a471d4835e9"
+export WANDB_API_KEY=""
 
 ADDITIONAL="-cache_dir ${HF_HOME}"
 if [ "$ISTRAINDIR" = true ] ; then
