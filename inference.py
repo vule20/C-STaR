@@ -653,8 +653,8 @@ def main():
     
     if config.dataset in supportedHFDatasets:
         if config.dataset == "gsm8k":
-            dataset_train = load_dataset('gsm8k', "main", split="train[0:50]")
-            dataset_test = load_dataset('gsm8k', "main", split="test[0:10]")
+            dataset_train = load_dataset('gsm8k', "main", split="train")
+            dataset_test = load_dataset('gsm8k', "main", split="test")
 
             print(f"Train size: {len(dataset_train)}")
             print(f"Test size: {len(dataset_test)}")
