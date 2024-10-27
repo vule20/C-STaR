@@ -303,6 +303,30 @@ def generateTestPrompt(instance, dataset, model, maxShots, direct, rationalize=F
 
 # ---------------------------------------------------------------------------
 def extractAnswer(answer, dataset, direct=False):
+    """
+    Extracts the answer and optional rationale from a model-generated response based on 
+    the specified dataset format.
+
+    Parameters:
+    -----------
+    answer (str): The model-generated text containing an answer.
+    dataset (str): Name of the dataset for which the answer extraction is performed. Supports "commonsense_qa", "gsm8k", and "arithmetic".
+    direct (bool, optional, default=False): If True, applies a more direct extraction method, assuming answer format without additional context or rationale.
+
+    Returns:
+    --------
+    dict or None: A dictionary containing the extracted answer and, if available, the rationale. If extraction fails, returns None.
+
+    Example:
+    --------
+    result = extractAnswer("The answer is (b).", "commonsense_qa")
+    print(result)
+    {'answer': 'b'}
+
+    result = extractAnswer("#### 42", "gsm8k", direct=True)
+    print(result)
+    {'answer': '42'}
+    """
     if dataset not in supportedDatasets:
         raise ValueError(f"{dataset} not supported!")
     if dataset == "commonsense_qa":
@@ -519,6 +543,34 @@ def processArguments(args):
 
 # ---------------------------------------------------------------------------
 def infer(model, modelName, tokenizer, prompt, generationConfig={}):
+    """
+    Generates text from a model based on a provided prompt and optional generation 
+    configuration settings.
+
+    Parameters:
+    -----------
+    model (torch.nn.Module): Model to use
+    modelName (str): Name of the model
+    tokenizer (transformers.PreTrainedTokenizer): The tokenizer used
+    prompt (str): The input text prompt
+    generationConfig (dict, optional, default={}): A dict of params for text generation
+
+    Returns:
+    --------
+    str: The generated text based on the input prompt.
+
+    Example:
+    --------
+    generated_text = infer(model, "gptj", tokenizer, "Once upon a time")
+    print(generated_text)
+    "Once upon a time, in a distant land..."
+
+    Notes:
+    ------
+    - `MODEL_MAX_NEW_TOKENS` defines the maximum number of new tokens generated per call.
+    - The `pad_token_id` is set to the model's EOS token to avoid padding issues.
+    """
+
     tokenizedInput = tokenizer(prompt, return_tensors="pt")
     inputIDs = tokenizedInput.input_ids.to(device=model.device)
     attentionMask = tokenizedInput.attention_mask.to(device=model.device)
@@ -542,6 +594,52 @@ def infer(model, modelName, tokenizer, prompt, generationConfig={}):
 
 # ---------------------------------------------------------------------------
 def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="ppl"):
+    """
+    Computes an uncertainty metric for a model's response to a given prompt using 
+    the specified uncertainty quantification method. 
+
+    Parameters:
+    -----------
+    model : PreTrainedModel
+        The language model to evaluate.
+    modelName : str
+        Name of the model, which determines how input and target tokens are set 
+        (supported values: "gptj", "llama3.1-instruct", "unifiedqa").
+    tokenizer : PreTrainedTokenizer
+        Tokenizer associated with the model, used to convert text into token IDs.
+    prompt : str
+        The input prompt or context provided to the model.
+    response : str
+        The model-generated response to the prompt.
+    method : str, optional (default="ppl")
+        The uncertainty quantification method. 
+
+    Returns:
+    --------
+    float
+        The computed perplexity (PPL) score as a measure of uncertainty, where a 
+        lower perplexity indicates a higher confidence in the response.
+
+    Raises:
+    -------
+    ValueError: If `modelName` is not recognized or if `method` is not "ppl".
+        
+    Notes:
+    ------
+    - For "gptj" and "llama3.1-instruct" models:
+        - The function evaluates the model's performance on the `response` section 
+          of the concatenated `prompt + response` text, ignoring the prompt tokens 
+          in the loss calculation by setting their target token values to -100.
+    - For "unifiedqa" model:
+        - The function treats the `prompt` and `response` separately, and evaluates 
+          the model solely on its ability to predict `response`.
+    
+    Example:
+    --------
+    ppl = compute_uncertainty(model, "gptj", tokenizer, "What is AI?", "AI is the simulation of human intelligence in machines.")
+    print(f"Perplexity: {ppl}")
+    """
+
     if method == "ppl":
         if modelName == "gptj" or modelName == "llama3.1-instruct":
             input_ids = tokenizer.encode(
@@ -585,6 +683,29 @@ def is_uncertain(uncertainty, method_param, method="ppl"):
 
 # ---------------------------------------------------------------------------
 def main():
+    """
+    Main function to load, configure, run inference, and evaluate a language model using Weights & Biases for experiment tracking.
+    Supports various model architectures and dataset configurations for making predictions and optionally performs rationalization.
+
+    Function Workflow:
+    -----------
+        1. Parse command-line arguments to configure the script.
+        2. Initialize a Weights & Biases project for experiment tracking.
+        3. Set the computation device based on availability (CPU or GPU).
+        4. Load a specified pre-trained or fine-tuned model and tokenizer from Hugging Face.
+        5. Check for dataset availability and load it. Split the data into training and testing sets, if applicable.
+        6. Iterate over specified training and testing datasets to generate predictions.
+        7. For each example, generate a prompt and run inference to get model predictions.
+        8. Optionally, perform rationalization: attempt to correct wrong predictions by re-formulating the problem.
+        9. Log each step of the process, including detailed information about inputs, predictions, and correct answers.
+        10. Save results for correct and incorrect predictions, both before and after rationalization, in JSON files.
+        11. Use Weights & Biases to finish tracking.
+
+    Exceptions:
+    -----------
+        ValueError: Thrown for unsupported model sizes, datasets, or when required configuration files are missing.
+        NotImplementedError: Raised for unsupported datasets or methods if not implemented.
+    """
     args = parser.parse_args()
 
     wandb.init(project="STaRC", config=processArguments(args))

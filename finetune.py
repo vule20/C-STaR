@@ -319,6 +319,30 @@ class DatasetTokenizer():
             raise ValueError("{} model not supported!".format(self.modelName))
 #---------------------------------------------------------------------------
 def extractAnswer(answer, dataset, direct=False):
+    """
+    Extracts the answer and optional rationale from a model-generated response based on 
+    the specified dataset format.
+
+    Parameters:
+    -----------
+    answer (str): The model-generated text containing an answer.
+    dataset (str): Name of the dataset for which the answer extraction is performed. Supports "commonsense_qa", "gsm8k", and "arithmetic".
+    direct (bool, optional, default=False): If True, applies a more direct extraction method, assuming answer format without additional context or rationale.
+
+    Returns:
+    --------
+    dict or None: A dictionary containing the extracted answer and, if available, the rationale. If extraction fails, returns None.
+
+    Example:
+    --------
+    result = extractAnswer("The answer is (b).", "commonsense_qa")
+    print(result)
+    {'answer': 'b'}
+
+    result = extractAnswer("#### 42", "gsm8k", direct=True)
+    print(result)
+    {'answer': '42'}
+    """
     if dataset not in supportedDatasets:
         raise ValueError(f"{dataset} not supported!")
     if dataset == "commonsense_qa":
@@ -494,6 +518,27 @@ def processArguments(args):
     return config
 #---------------------------------------------------------------------------
 def main():
+    """
+    Main function to configure, train, and evaluate a language model using Weights & Biases for experiment tracking.
+
+    Function Workflow:
+    -----------
+        1. Parse command-line arguments.
+        2. Initialize a Weights & Biases project for tracking.
+        3. Identify device availability (CPU or GPU).
+        4. Load the specified pre-trained model and tokenizer.
+        5. Preprocess and tokenize the input dataset(s).
+        6. Initialize data loaders for training (and testing, if applicable).
+        7. Configure the optimizer and learning rate scheduler.
+        8. Train the model over the specified number of epochs or steps.
+        9. Log training progress and periodically save the model with the best performance.
+        10. Optionally evaluate the model during training.
+
+    Exceptions:
+    -----------
+        ValueError: Raised if unsupported model size, dataset, or other configuration discrepancies are encountered.
+        NotImplementedError: Raised for unsupported datasets or evaluation functionality if not yet implemented.
+    """
     args = parser.parse_args()
 
     wandb.init(
