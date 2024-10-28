@@ -88,7 +88,7 @@ parser.add_argument(
 
 parser.add_argument("-size", help="Size of HuggingFace model to use", default="6b")
 
-parser.add_argument(
+
     "-dataset",
     choices=supportedDatasets,
     help="Name of HuggingFace dataset to use",
@@ -576,20 +576,24 @@ def infer(model, modelName, tokenizer, prompt, generationConfig={}):
     attentionMask = tokenizedInput.attention_mask.to(device=model.device)
 
     print(prompt)
+    try:
+        genTokens = model.generate(
+            input_ids=inputIDs,
+            attention_mask=attentionMask,
+            max_new_tokens=MODEL_MAX_NEW_TOKENS,
+            pad_token_id=tokenizer.eos_token_id,
+            **generationConfig,
+        )
 
-    genTokens = model.generate(
-        input_ids=inputIDs,
-        attention_mask=attentionMask,
-        max_new_tokens=MODEL_MAX_NEW_TOKENS,
-        pad_token_id=tokenizer.eos_token_id,
-        **generationConfig,
-    )
-    if modelName == "gptj" or modelName == "llama3.1-instruct":
-        outputIDs = genTokens[0, len(inputIDs[0]) :]
-    else:
-        outputIDs = genTokens[0, :]
-    genText = tokenizer.decode(outputIDs)
-    return genText
+        if modelName == "gptj" or modelName == "llama3.1-instruct":
+            outputIDs = genTokens[0, len(inputIDs[0]) :]
+        else:
+            outputIDs = genTokens[0, :]
+        genText = tokenizer.decode(outputIDs)
+        return genText
+    except Exception as e:
+        print(f"An error occurred during inference: {e}")
+        return ""
 
 
 # ---------------------------------------------------------------------------
@@ -844,6 +848,20 @@ def main():
             print(f"Test size: {len(dataset_test)}")
 
             dataset = DatasetDict({"train": dataset_train, "test": dataset_test})
+        elif config.dataset == "commonsense_qa":
+            dataset_train = load_dataset('commonsense_qa' , split="train[0:1000]")
+            dataset_valid = load_dataset('commonsense_qa', split="validation")
+            dataset_test = load_dataset('commonsense_qa', split="test")
+
+            print(f"Train size: {len(dataset_train)}")
+            print(f"Valid size: {len(dataset_train)}")
+            print(f"Test size: {len(dataset_test)}")
+
+            dataset = DatasetDict({
+                'train': dataset_train,
+                'validation': dataset_valid,
+                'test': dataset_test
+            })
         else:
             dataset = load_dataset(config.dataset)
 
@@ -1209,9 +1227,9 @@ def main():
                                 rationalizedWrongPreds.append(testInstance)
                     logging.info("*" * 50)
                 #     break
-                # print("Accuracy: {:0.2f}% ({}/{})".format((accuracyScore/len(testData))*100, accuracyScore, len(testData)))
-                # if config.rationalize:
-                #     print("Rationalization Accuracy: {:0.2f}% ({}/{})".format((rationalizedAccuracyScore/(len(rationalizedCorrectPreds)+len(rationalizedWrongPreds)))*100, rationalizedAccuracyScore, (len(rationalizedCorrectPreds)+len(rationalizedWrongPreds))))
+                print("Accuracy: {:0.2f}% ({}/{})".format((accuracyScore/len(testData))*100, accuracyScore, len(testData)))
+                if config.rationalize:
+                    print("Rationalization Accuracy: {:0.2f}% ({}/{})".format((rationalizedAccuracyScore/(len(rationalizedCorrectPreds)+len(rationalizedWrongPreds)))*100, rationalizedAccuracyScore, (len(rationalizedCorrectPreds)+len(rationalizedWrongPreds))))
                 if not config.outPath.endswith("/"):
                     config.outPath += "/"
                 if not os.path.exists(f"{config.outPath}{config.saveAs}"):
