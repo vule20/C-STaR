@@ -88,7 +88,7 @@ parser.add_argument(
 
 parser.add_argument("-size", help="Size of HuggingFace model to use", default="6b")
 
-
+parser.add_argument(
     "-dataset",
     choices=supportedDatasets,
     help="Name of HuggingFace dataset to use",
