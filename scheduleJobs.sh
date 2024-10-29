@@ -3,17 +3,17 @@
 #SBATCH --partition=gpu-preempt
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-gpu=16
+#SBATCH --cpus-per-gpu=8
 #SBATCH --output=slurm/log_test_%j.out
-#SBATCH --gres=gpu:a100:2
-#SBATCH --mem=120G
-#SBATCH -t 1:00:00
+#SBATCH --gres=gpu:3
+#SBATCH --mem=100G
+#SBATCH -t 30:00:00
 #SBATCH --exclude=gypsum-gpu043
 
 ITERATION=0
 LEARNINGRATE=1e-6
-ENDITERATION=10
-NUMSTEPS=40
+ENDITERATION=5
+NUMSTEPS=1000
 BATHSIZE=8
 MAXSHOTS=9
 
