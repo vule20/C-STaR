@@ -217,15 +217,27 @@ then
     exit 1
 fi
 echo "<<NEXT>>"
-sbatch scheduleJobs.sh \
-    -d $DATASET \
-    -e $ENDITERATION \
-    -i $NEXTITERATION \
-    -m $MODEL \
-    -n $NEXTSTEPS \
-    -o $ORIGINALMODELPATH \
-    -p "${SAVEMODELPATH}${SAVEMODELNAME}" \
-    -s $MODELSIZE \
-    -u $UNCERTAINTY \
-    -v $METHOD \
-    -w $METHODPARAM
+if [ "$UNCERTAINTY" = true ] ; then
+    sbatch scheduleJobs.sh \
+        -d $DATASET \
+        -e $ENDITERATION \
+        -i $NEXTITERATION \
+        -m $MODEL \
+        -n $NEXTSTEPS \
+        -o $ORIGINALMODELPATH \
+        -p "${SAVEMODELPATH}${SAVEMODELNAME}" \
+        -s $MODELSIZE \
+        -u \
+        -v $METHOD \
+        -w $METHODPARAM
+else
+    sbatch scheduleJobs.sh \
+        -d $DATASET \
+        -e $ENDITERATION \
+        -i $NEXTITERATION \
+        -m $MODEL \
+        -n $NEXTSTEPS \
+        -o $ORIGINALMODELPATH \
+        -p "${SAVEMODELPATH}${SAVEMODELNAME}" \
+        -s $MODELSIZE 
+fi
