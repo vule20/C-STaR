@@ -56,6 +56,7 @@ if (($ENDITERATION == $ITERATION)); then
     exit 1; 
 fi
 
+module load conda/latest
 conda activate llama3
 wandb disabled
 
@@ -67,7 +68,6 @@ export TRANSFORMERS_CACHE="/work/$SLURM_JOB_ACCOUNT/$USER/huggingface_cache"
 export TOKENIZERS_PARALLELISM=true
 
 mkdir -p $HF_HOME
-
 module load cuda/12.6
 
 export WANDB_API_KEY=""

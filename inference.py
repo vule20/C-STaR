@@ -848,20 +848,20 @@ def main():
             print(f"Test size: {len(dataset_test)}")
 
             dataset = DatasetDict({"train": dataset_train, "test": dataset_test})
-        elif config.dataset == "commonsense_qa":
-            dataset_train = load_dataset('commonsense_qa' , split="train[0:1000]")
-            dataset_valid = load_dataset('commonsense_qa', split="validation")
-            dataset_test = load_dataset('commonsense_qa', split="test")
+        # elif config.dataset == "commonsense_qa":
+        #     dataset_train = load_dataset('commonsense_qa' , split="train[0:1000]")
+        #     dataset_valid = load_dataset('commonsense_qa', split="validation")
+        #     dataset_test = load_dataset('commonsense_qa', split="test")
 
-            print(f"Train size: {len(dataset_train)}")
-            print(f"Valid size: {len(dataset_train)}")
-            print(f"Test size: {len(dataset_test)}")
+        #     print(f"Train size: {len(dataset_train)}")
+        #     print(f"Valid size: {len(dataset_train)}")
+        #     print(f"Test size: {len(dataset_test)}")
 
-            dataset = DatasetDict({
-                'train': dataset_train,
-                'validation': dataset_valid,
-                'test': dataset_test
-            })
+        #     dataset = DatasetDict({
+        #         'train': dataset_train,
+        #         'validation': dataset_valid,
+        #         'test': dataset_test
+        #     })
         else:
             dataset = load_dataset(config.dataset)
 
