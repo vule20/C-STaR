@@ -179,7 +179,7 @@ parser.add_argument(
 parser.add_argument(
     "-method",
     type=str,
-    choices=["ppl"],
+    choices=["ppl", "entropy"],
     help="Type of uncertainty method to use",
     default="ppl",
 )
@@ -644,47 +644,115 @@ def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="p
     print(f"Perplexity: {ppl}")
     """
 
-    if method == "ppl":
+def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="ppl"):
+    if method=="ppl":
         if modelName == "gptj" or modelName == "llama3.1-instruct":
             input_ids = tokenizer.encode(
-                prompt + response, padding="longest", truncation=True, return_tensors="pt"
+                prompt + response,
+                padding="longest",
+                truncation=True,
+                return_tensors="pt"
             )
             response_ids = tokenizer.encode(
-                response, padding="longest", truncation=True, return_tensors="pt"
+                response,
+                padding="longest",
+                truncation=True,
+                return_tensors="pt"
             )
             target_ids = input_ids.clone()
-            target_ids[0, : -response_ids.shape[-1]] = -100
+            target_ids[0, :-response_ids.shape[-1]] = -100
         elif modelName == "unifiedqa":
             input_ids = tokenizer.encode(
-                prompt, padding="longest", truncation=True, return_tensors="pt"
+                prompt,
+                padding="longest",
+                truncation=True,
+                return_tensors="pt"
             )
             response_ids = tokenizer.encode(
-                response, padding="longest", truncation=True, return_tensors="pt"
+                response,
+                padding="longest",
+                truncation=True,
+                return_tensors="pt"
             )
             target_ids = response_ids
-        else:
+        else: 
             raise ValueError("Unrecognized model: {}".format(modelName))
-        outputs = model(input_ids=input_ids, labels=target_ids)
+        outputs = model(
+            input_ids=input_ids,
+            labels=target_ids
+        ) 
         ppl = np.exp(outputs.loss.item())
         return ppl
-    else:
-        raise ValueError(
-            "Unrecognized uncertainty quantification method: {}".format(method)
-        )
-
-
+    if method=="entropy":
+        if modelName == "gptj" or modelName == "llama3.1-instruct":
+            input_ids = tokenizer.encode(
+                prompt + response,
+                padding="longest",
+                truncation=True,
+                return_tensors="pt"
+            )
+            response_ids = tokenizer.encode(
+                response,
+                padding="longest",
+                truncation=True,
+                return_tensors="pt"
+            )
+            target_ids = input_ids.clone()
+            target_ids[0, :-response_ids.shape[-1]] = -100
+        elif modelName == "unifiedqa":
+            input_ids = tokenizer.encode(
+                prompt,
+                padding="longest",
+                truncation=True,
+                return_tensors="pt"
+            )
+            response_ids = tokenizer.encode(
+                response,
+                padding="longest",
+                truncation=True,
+                return_tensors="pt"
+            )
+            target_ids = response_ids
+        else: 
+            raise ValueError("Unrecognized model: {}".format(modelName))
+        outputs = model(
+            input_ids=input_ids,
+            labels=target_ids
+        ) 
+        entropy = get_entropy(outputs.logits, target_ids)
+        return entropy
+    else: 
+        raise ValueError("Unrecognized uncertainty quantification method: {}".format(method))
 # ---------------------------------------------------------------------------
 def is_uncertain(uncertainty, method_param, method="ppl"):
-    if method == "ppl":
+    if method=="ppl":
         if uncertainty > float(method_param):
-            return True
+            return True 
         return False
-    else:
-        raise ValueError(
-            "Unrecognized uncertainty quantification method: {}".format(method)
-        )
-
-
+    if method=="entropy":
+        if uncertainty > float(method_param):
+            return True 
+        return False
+    else: 
+        raise ValueError("Unrecognized uncertainty quantification method: {}".format(method))
+#---------------------------------------------------------------------------
+def get_entropy(logits, target_ids):
+    entropy = []
+    target_inds = torch.where(target_ids!= -100)
+    target_rows = target_inds[0].tolist()
+    target_cols = target_inds[-1].tolist()
+    entropy = [[]*(1+max(target_rows))]
+    for row_idx, col_idx in zip(target_rows, target_cols):
+        if col_idx==0:
+            continue
+        #Assumption: Target tokens are one-shifted 
+        next_token_logits = logits[row_idx, col_idx-1, :]
+        next_token_probs = torch.softmax(next_token_logits, dim=-1)
+        next_token_logprobs = torch.log(next_token_probs)
+        entropy[row_idx].append(-torch.sum(next_token_probs * next_token_logprobs))
+    entropy = torch.stack([torch.stack(ent) for ent in entropy])
+    #Assumption: batch_size==1
+    return entropy.mean().item()
 # ---------------------------------------------------------------------------
 def main():
     """
