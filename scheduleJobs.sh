@@ -51,11 +51,6 @@ while getopts 'd:e:i:m:n:o:p:s:uv:w:' opt; do
   esac
 done
 
-if (($ENDITERATION == $ITERATION)); then 
-    echo "Stop iteration reached. Terminating..."; 
-    exit 1; 
-fi
-
 conda activate llama3
 wandb disabled
 
@@ -193,6 +188,11 @@ if [ $? != 0 ];
 then
     echo "Inference (train) failed"
     exit 1
+fi
+
+if (($ENDITERATION == $ITERATION)); then 
+    echo "Stop iteration reached. Terminating..."; 
+    exit 1; 
 fi
 
 echo "<<FINETUNE>>"
