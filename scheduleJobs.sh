@@ -3,9 +3,9 @@
 #SBATCH --partition=gpu-preempt
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-gpu=8
+#SBATCH --cpus-per-gpu=16
 #SBATCH --output=slurm/log_test_%j.out
-#SBATCH --gres=gpu:3
+#SBATCH --gres=gpu:2
 #SBATCH --mem=100G
 #SBATCH -t 30:00:00
 #SBATCH --exclude=gypsum-gpu043
@@ -57,7 +57,34 @@ if (($ENDITERATION == $ITERATION)); then
 fi
 
 module load conda/latest
+module load cuda/12.6
 conda activate llama3
+
+export PATH="/home/jrussell_umass_edu/.conda/envs/llama3/bin:$PATH"
+export PYTHONPATH="/home/jrussell_umass_edu/.conda/envs/llama3/lib/python3.10/site-packages"
+
+echo "Conda environment activated: llama3"
+echo "PATH after manual adjustment: $PATH"
+echo "Current Python path: $(which python)"
+echo "Python version: $(python --version)"
+
+
+if [ "$CONDA_DEFAULT_ENV" != "llama3" ]; then
+    echo "Error: Conda environment 'llama3' was not activated."
+    # exit 1
+else
+    echo "Conda environment 'llama3' successfully activated."
+fi
+
+# Additional check for Python command from the environment
+if ! which python | grep -q "llama3"; then
+    echo "Error: Python does not point to the expected Conda environment."
+    echo "Current Python path: $(which python)"
+    # exit 1
+else
+    echo "Python environment is correctly set."
+fi
+
 wandb disabled
 
 export WANDB_MODE=disabled
@@ -67,10 +94,9 @@ export HF_DATASETS_CACHE="/work/$SLURM_JOB_ACCOUNT/$USER/huggingface_cache"
 export TRANSFORMERS_CACHE="/work/$SLURM_JOB_ACCOUNT/$USER/huggingface_cache"
 export TOKENIZERS_PARALLELISM=true
 
-mkdir -p $HF_HOME
-module load cuda/12.6
+# mkdir -p $HF_HOME
 
-export WANDB_API_KEY=""
+export WANDB_API_KEY="f9e9e8b6ad3619d48e72fce744470ff200ef089e"
 
 MODELNAME="${MODEL}_${ITERATION}"
 if [ "$UNCERTAINTY" = true ] ; then

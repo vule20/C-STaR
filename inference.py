@@ -198,7 +198,7 @@ def _generateIndividualPrompt(
         raise ValueError(f"{dataset} not supported!")
 
     inp, out = "", ""
-
+    logging.info(dataset)
     # commonsense_qa on HuggingFace
     # {
     #     "id": (string),
@@ -210,6 +210,8 @@ def _generateIndividualPrompt(
     #     "answerKey": (string)
     # }
     if dataset == "commonsense_qa":
+        logging.info('in commonsense_qa')
+        print(instance)
         if not direct and not isTest:
             raise ValueError(
                 "Only direct prompting supported with commonsense_qa dataset on HuggingFace!"
@@ -327,13 +329,16 @@ def extractAnswer(answer, dataset, direct=False):
     print(result)
     {'answer': '42'}
     """
+    print(answer)
     if dataset not in supportedDatasets:
         raise ValueError(f"{dataset} not supported!")
     if dataset == "commonsense_qa":
+        logging.info("extracting answer from commonsense qa")
         if not direct:
             searchPattern = "answer is .*."
         else:
             searchPattern = "\([a-z]\)."
+
         matchedSpan = re.search(searchPattern, answer)
         if matchedSpan == None:
             logging.warning(f"Could not extract answer from {answer}!")
@@ -575,7 +580,7 @@ def infer(model, modelName, tokenizer, prompt, generationConfig={}):
     inputIDs = tokenizedInput.input_ids.to(device=model.device)
     attentionMask = tokenizedInput.attention_mask.to(device=model.device)
 
-    print(prompt)
+    print(f"prompt: {prompt}")
     try:
         genTokens = model.generate(
             input_ids=inputIDs,
@@ -590,6 +595,7 @@ def infer(model, modelName, tokenizer, prompt, generationConfig={}):
         else:
             outputIDs = genTokens[0, :]
         genText = tokenizer.decode(outputIDs)
+        print(f"genText: {genText}")
         return genText
     except Exception as e:
         print(f"An error occurred during inference: {e}")
@@ -848,20 +854,20 @@ def main():
             print(f"Test size: {len(dataset_test)}")
 
             dataset = DatasetDict({"train": dataset_train, "test": dataset_test})
-        # elif config.dataset == "commonsense_qa":
-        #     dataset_train = load_dataset('commonsense_qa' , split="train[0:1000]")
-        #     dataset_valid = load_dataset('commonsense_qa', split="validation")
-        #     dataset_test = load_dataset('commonsense_qa', split="test")
+        elif config.dataset == "commonsense_qa":
+            dataset_train = load_dataset('commonsense_qa' , split="train")
+            dataset_valid = load_dataset('commonsense_qa', split="validation")
+            dataset_test = load_dataset('commonsense_qa', split="test")
 
-        #     print(f"Train size: {len(dataset_train)}")
-        #     print(f"Valid size: {len(dataset_train)}")
-        #     print(f"Test size: {len(dataset_test)}")
+            print(f"Train size: {len(dataset_train)}")
+            print(f"Valid size: {len(dataset_train)}")
+            print(f"Test size: {len(dataset_test)}")
 
-        #     dataset = DatasetDict({
-        #         'train': dataset_train,
-        #         'validation': dataset_valid,
-        #         'test': dataset_test
-        #     })
+            dataset = DatasetDict({
+                'train': dataset_train,
+                'validation': dataset_valid,
+                'test': dataset_test
+            })
         else:
             dataset = load_dataset(config.dataset)
 
@@ -878,7 +884,7 @@ def main():
             print("Train file: {}".format(trainFile))
             if not config.zeroShot:
                 if trainFile.endswith(".json"):
-                    with open(trainFile, "r") as f:
+                    with open(trainFile, "r", encoding='utf-8') as f:
                         trainData = json.load(f)
                 elif trainFile.endswith(".jsonl"):
                     trainData = []
@@ -887,7 +893,7 @@ def main():
                             trainData.append(json.loads(line))
                 elif config.trainPrompts:
                     if trainFile.endswith(".txt"):
-                        with open(trainFile, "r") as f:
+                        with open(trainFile, "r", encoding='utf-8') as f:
                             trainPrompt = f.read()
                     else:
                         raise ValueError(
@@ -896,7 +902,7 @@ def main():
                     if config.rationalize:
                         hintTrainFile = config.hintTrainPrompts[trainInd]
                         if hintTrainFile.endswith(".txt"):
-                            with open(hintTrainFile, "r") as f:
+                            with open(hintTrainFile, "r", encoding='utf-8') as f:
                                 rationalizedTrainPrompt = f.read()
                         else:
                             raise ValueError(
@@ -936,11 +942,11 @@ def main():
                 if config.dataset in supportedDatasets:
                     if testFile.endswith(".jsonl"):
                         testData = []
-                        with open(testFile, "r") as f:
+                        with open(testFile, "r", encoding='utf-8') as f:
                             for line in f:
                                 testData.append(json.loads(line))
                     elif testFile.endswith(".json"):
-                        with open(testFile, "r") as f:
+                        with open(testFile, "r", encoding='utf-8') as f:
                             testData = json.load(f)
                         if config.dataset == "arithmetic":
                             # Randomly sample 10000 examples

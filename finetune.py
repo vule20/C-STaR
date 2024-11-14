@@ -229,6 +229,8 @@ class DatasetTokenizer():
             # }
             if self.modelName in ["gptj", "llama3.1-instruct"]:
                 if self.dataset == "commonsense_qa":
+                    print('in commonsenseqa')
+                    print(instance)
                     inp += "Q: " + instance["question"] + "\nAnswer Choices:\n"
                     corrAns = ""
                     for c, t in zip(instance["choices"]["label"], instance["choices"]["text"]):
@@ -637,7 +639,7 @@ def main():
     trainData = []
     for trainFile in config.trainFiles:
         if trainFile.endswith(".json"):
-            with open(trainFile, "r") as f:
+            with open(trainFile, "r", encoding='utf-8') as f:
                 trainData.extend(json.load(f))
         elif config.dataset in supportedHFDatasets:
             trainData.extend(list(dataset[trainFile]))
@@ -651,7 +653,7 @@ def main():
         testData = []
         for testFile in config.testFiles:
             if testFile.endswith(".json"):
-                with open(testFile, "r") as f:
+                with open(testFile, "r", encoding='utf-8') as f:
                     testData.extend(json.load(f))
             elif config.dataset in supportedHFDatasets:
                 testData.extend(list(dataset[testFile]))
@@ -661,7 +663,7 @@ def main():
 
     trainPrompt=""
     if config.trainPrompt!="None":
-        with open(config.trainPrompt, "r") as f:
+        with open(config.trainPrompt, "r", encoding='utf-8') as f:
             trainPrompt = f.read()
 
     if config.dataset == "commonsense_qa":
