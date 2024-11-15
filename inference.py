@@ -623,7 +623,7 @@ def input_target_ids(modelName, prompt, response, tokenizer):
 
 # ---------------------------------------------------------------------------
 
-def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="ppl", correctAnswer):
+def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="ppl", correctAnswer=None):
     """
     Computes an uncertainty metric for a model's response to a given prompt using 
     the specified uncertainty quantification method. 
