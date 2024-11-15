@@ -6,7 +6,7 @@ import torch
 import transformers
 from transformers import AutoModelForCausalLM, AutoTokenizer, DataCollatorForSeq2Seq, DataCollatorForLanguageModeling, DataCollatorForSeq2Seq, AdamW, get_scheduler, T5ForConditionalGeneration, T5Tokenizer, LlamaForCausalLM
 from torch.optim import Adam
-from datasets import Dataset, load_dataset
+from datasets import Dataset, load_dataset, DatasetDict
 import numpy as np
 import json
 import json
@@ -229,8 +229,6 @@ class DatasetTokenizer():
             # }
             if self.modelName in ["gptj", "llama3.1-instruct"]:
                 if self.dataset == "commonsense_qa":
-                    print('in commonsenseqa')
-                    print(instance)
                     inp += "Q: " + instance["question"] + "\nAnswer Choices:\n"
                     corrAns = ""
                     for c, t in zip(instance["choices"]["label"], instance["choices"]["text"]):
@@ -519,6 +517,14 @@ def processArguments(args):
         
     return config
 #---------------------------------------------------------------------------
+def fix_encoding(batch):
+        try:
+            return {"text": batch["text"].encode("utf-8", errors="replace").decode("utf-8")}
+        except UnicodeDecodeError as e:
+            print(f"Error in row: {batch}")
+            print(f"Error message: {e}")
+            return batch 
+# ---------------------------------------------------------------------------
 def main():
     """
     Main function to configure, train, and evaluate a language model using Weights & Biases for experiment tracking.
@@ -633,8 +639,29 @@ def main():
     if config.dataset in supportedHFDatasets:
         if config.dataset == "gsm8k":
             dataset = load_dataset(config.dataset, "main")
+        # elif config.dataset == "commonsense_qa":
+        #     dataset_train = load_dataset('commonsense_qa' , split="train", download_mode="force_redownload")
+        #     dataset_valid = load_dataset('commonsense_qa', split="validation", download_mode="force_redownload")
+        #     dataset_test = load_dataset('commonsense_qa', split="test", download_mode="force_redownload")
+
+        #     print(f"Train size: {len(dataset_train)}")
+        #     print(f"Valid size: {len(dataset_train)}")
+        #     print(f"Test size: {len(dataset_test)}")
+
+        #     dataset = DatasetDict({
+        #         'train': dataset_train,
+        #         'validation': dataset_valid,
+        #         'test': dataset_test
+        #     })
         else:
-            dataset = load_dataset(config.dataset)
+            try:
+                dataset = load_dataset(config.dataset)
+            except UnicodeDecodeError as e:
+                print(f"Error: {e}")
+
+                dataset = dataset.map(fix_encoding)
+                print("Reprocessing completed.")
+                dataset = dataset.map(fix_encoding)
     
     trainData = []
     for trainFile in config.trainFiles:

@@ -198,7 +198,6 @@ def _generateIndividualPrompt(
         raise ValueError(f"{dataset} not supported!")
 
     inp, out = "", ""
-    logging.info(dataset)
     # commonsense_qa on HuggingFace
     # {
     #     "id": (string),
@@ -210,8 +209,6 @@ def _generateIndividualPrompt(
     #     "answerKey": (string)
     # }
     if dataset == "commonsense_qa":
-        logging.info('in commonsense_qa')
-        print(instance)
         if not direct and not isTest:
             raise ValueError(
                 "Only direct prompting supported with commonsense_qa dataset on HuggingFace!"
@@ -760,6 +757,14 @@ def get_entropy(logits, target_ids):
     #Assumption: batch_size==1
     return entropy.mean().item()
 # ---------------------------------------------------------------------------
+def fix_encoding(batch):
+        try:
+            return {"text": batch["text"].encode("utf-8", errors="replace").decode("utf-8")}
+        except UnicodeDecodeError as e:
+            print(f"Error in row: {batch}")
+            print(f"Error message: {e}")
+            return batch 
+# ---------------------------------------------------------------------------
 def main():
     """
     Main function to load, configure, run inference, and evaluate a language model using Weights & Biases for experiment tracking.
@@ -912,7 +917,7 @@ def main():
         raise ValueError(
             "Only {} dataset(s) supported!".format("/".join(supportedDatasets))
         )
-
+    
     if config.dataset in supportedHFDatasets:
         if config.dataset == "gsm8k":
             dataset_train = load_dataset('gsm8k', "main", split="train")
@@ -922,22 +927,29 @@ def main():
             print(f"Test size: {len(dataset_test)}")
 
             dataset = DatasetDict({"train": dataset_train, "test": dataset_test})
-        elif config.dataset == "commonsense_qa":
-            dataset_train = load_dataset('commonsense_qa' , split="train")
-            dataset_valid = load_dataset('commonsense_qa', split="validation")
-            dataset_test = load_dataset('commonsense_qa', split="test")
+        # elif config.dataset == "commonsense_qa":
+        #     dataset_train = load_dataset('commonsense_qa' , split="train")
+        #     dataset_valid = load_dataset('commonsense_qa', split="validation")
+        #     dataset_test = load_dataset('commonsense_qa', split="test")
 
-            print(f"Train size: {len(dataset_train)}")
-            print(f"Valid size: {len(dataset_train)}")
-            print(f"Test size: {len(dataset_test)}")
+        #     print(f"Train size: {len(dataset_train)}")
+        #     print(f"Valid size: {len(dataset_train)}")
+        #     print(f"Test size: {len(dataset_test)}")
 
-            dataset = DatasetDict({
-                'train': dataset_train,
-                'validation': dataset_valid,
-                'test': dataset_test
-            })
+        #     dataset = DatasetDict({
+        #         'train': dataset_train,
+        #         'validation': dataset_valid,
+        #         'test': dataset_test
+        #     })
         else:
-            dataset = load_dataset(config.dataset)
+            try:
+                dataset = load_dataset(config.dataset)
+            except UnicodeDecodeError as e:
+                print(f"Error: {e}")
+
+                dataset = dataset.map(fix_encoding)
+                print("Reprocessing completed.")
+                dataset = dataset.map(fix_encoding)
 
     print(f"Model: {config.model}-{config.size}")
     print(f"Model Path: {config.modelPath}")
