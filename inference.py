@@ -23,6 +23,8 @@ import glob
 from os.path import exists
 from pathlib import Path
 from peft import PeftModel, PeftConfig
+import torch
+import torch.nn.functional as F
 
 MODEL_TEMPERATURE = 0.1
 MODEL_TOP_P = 0.9
@@ -621,7 +623,7 @@ def input_target_ids(modelName, prompt, response, tokenizer):
 
 # ---------------------------------------------------------------------------
 
-def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="ppl"):
+def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="ppl", correctAnswer):
     """
     Computes an uncertainty metric for a model's response to a given prompt using 
     the specified uncertainty quantification method. 
@@ -668,21 +670,22 @@ def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="p
     print(f"Perplexity: {ppl}")
     """
 
-def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="ppl"):
-
-    input_ids, target_ids = input_target_ids(modelName, prompt, response, tokenizer)
-    outputs = model(input_ids=input_ids, labels=target_ids)
-
     if method == "ppl":
+        input_ids, target_ids = input_target_ids(modelName, prompt, response, tokenizer)
+        outputs = model(input_ids=input_ids, labels=target_ids)
         return np.exp(outputs.loss.item())
     elif method == "entropy":
+        input_ids, target_ids = input_target_ids(modelName, prompt, response, tokenizer)
+        outputs = model(input_ids=input_ids, labels=target_ids)
         return get_entropy(outputs.logits, target_ids)
+    elif method == 'rationale_usefullness':
+        return get_rationale_usefulness(model, prompt, response, correctAnswer, tokenizer)
     else:
         raise ValueError(f"Unrecognized uncertainty quantification method: {method}")
     
 # ---------------------------------------------------------------------------
 def is_uncertain(uncertainty, method_param, method="ppl"):
-    if method in ["ppl", 'entropy']:
+    if method in ["ppl", 'entropy', 'rationale_usefullness']:
         if uncertainty > float(method_param):
             return True 
         return False
@@ -706,6 +709,28 @@ def get_entropy(logits, target_ids):
     entropy = torch.stack([torch.stack(ent) for ent in entropy])
     #Assumption: batch_size==1
     return entropy.mean().item()
+# ---------------------------------------------------------------------------
+def get_rationale_usefulness(model, prompt, response, correctAnswer, tokenizer):
+    direct_prompt = prompt + " " + correctAnswer
+    CoT_prompt = prompt + " " + response + " " + correctAnswer
+
+    direct_ids = tokenizer.encode(direct_prompt, padding="longest", truncation=True, return_tensors="pt")
+    CoT_ids = tokenizer.encode(CoT_prompt, padding="longest", truncation=True, return_tensors="pt")
+
+    direct_logits = model(direct_ids).logits
+    CoT_logits = model(CoT_ids).logits
+
+    direct_probs = F.softmax(direct_logits[:, -1, :], dim=-1)
+    CoT_probs = F.softmax(CoT_logits[:, -1, :], dim=-1)
+
+    correct_answer_ids = tokenizer.encode(correctAnswer, return_tensors='pt')
+    correct_answer_id = correct_answer_ids[0, -1].item()
+
+    p_direct = direct_probs[0, correct_answer_id].item()
+    p_CoT = CoT_probs[0, correct_answer_id].item()
+
+    return p_direct - p_CoT
+
 # ---------------------------------------------------------------------------
 def fix_encoding(batch):
         try:
@@ -1094,22 +1119,18 @@ def main():
 
                     outputs.append(testInstance)
                     curInstanceCorrect = False
+                    correctAnswer = None
                     if config.dataset == "commonsense_qa":
-                        if prediction.lower() == testInstance["answerKey"].lower():
-                            accuracyScore += 1
-                            correctPreds.append(testInstance)
-                            curInstanceCorrect = True
+                        correctAnswer = testInstance["answerKey"].lower() 
                     elif config.dataset == "gsm8k":
-                        if prediction.lower() == corrAnswer["answer"].lower():
-                            accuracyScore += 1
-                            correctPreds.append(testInstance)
-                            curInstanceCorrect = True
+                        correctAnswer = corrAnswer["answer"].lower()
                     elif config.dataset == "arithmetic":
-                        if prediction.lower() == testInstance["answerKey"].lower():
-                            accuracyScore += 1
-                            correctPreds.append(testInstance)
-                            curInstanceCorrect = True
-
+                        correctAnswer = testInstance["answerKey"].lower()
+                    if prediction.lower() == correctAnswer:
+                        accuracyScore += 1
+                        correctPreds.append(testInstance)
+                        curInstanceCorrect = True
+        
                     if config.uncertainty:
                         uncertainty = compute_uncertainty(
                             model,
@@ -1118,6 +1139,7 @@ def main():
                             finalPrompt,
                             rationale,
                             config.method,
+                            correctAnswer
                         )
                         model_uncertain = is_uncertain(
                             uncertainty, config.methodParam, config.method
