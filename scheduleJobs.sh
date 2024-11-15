@@ -221,6 +221,11 @@ then
     exit 1
 fi
 
+if (($ENDITERATION == $ITERATION)); then 
+    echo "Stop iteration reached. Terminating..."; 
+    exit 1; 
+fi
+
 echo "<<FINETUNE>>"
 python3 finetune.py \
     -trainFiles $TRAINFILES \
