@@ -669,20 +669,23 @@ def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="p
     ppl = compute_uncertainty(model, "gptj", tokenizer, "What is AI?", "AI is the simulation of human intelligence in machines.")
     print(f"Perplexity: {ppl}")
     """
-
-    if method == "ppl":
-        input_ids, target_ids = input_target_ids(modelName, prompt, response, tokenizer)
-        outputs = model(input_ids=input_ids, labels=target_ids)
-        return np.exp(outputs.loss.item())
-    elif method == "entropy":
-        input_ids, target_ids = input_target_ids(modelName, prompt, response, tokenizer)
-        outputs = model(input_ids=input_ids, labels=target_ids)
-        return get_entropy(outputs.logits, target_ids)
-    elif method == 'rationale_usefullness':
-        return get_rationale_usefulness(model, prompt, response, correctAnswer, tokenizer)
-    else:
-        raise ValueError(f"Unrecognized uncertainty quantification method: {method}")
-    
+    try: 
+        if method == "ppl":
+            input_ids, target_ids = input_target_ids(modelName, prompt, response, tokenizer)
+            outputs = model(input_ids=input_ids, labels=target_ids)
+            return np.exp(outputs.loss.item())
+        elif method == "entropy":
+            input_ids, target_ids = input_target_ids(modelName, prompt, response, tokenizer)
+            outputs = model(input_ids=input_ids, labels=target_ids)
+            return get_entropy(outputs.logits, target_ids)
+        elif method == 'rationale_usefullness':
+            if correctAnswer is None:
+                    raise ValueError("Correct answer must be provided for rationale usefulness method.")
+            return get_rationale_usefulness(model, prompt, response, correctAnswer, tokenizer)
+        else:
+            raise ValueError(f"Unrecognized uncertainty quantification method: {method}")
+    except Exception as e:
+        raise RuntimeError(f"Error occurred in compute_uncertainty for method '{method}': {str(e)}")
 # ---------------------------------------------------------------------------
 def is_uncertain(uncertainty, method_param, method="ppl"):
     if method in ["ppl", 'entropy', 'rationale_usefullness']:
@@ -693,43 +696,71 @@ def is_uncertain(uncertainty, method_param, method="ppl"):
         raise ValueError("Unrecognized uncertainty quantification method: {}".format(method))
 #---------------------------------------------------------------------------
 def get_entropy(logits, target_ids):
-    entropy = []
-    target_inds = torch.where(target_ids!= -100)
-    target_rows = target_inds[0].tolist()
-    target_cols = target_inds[-1].tolist()
-    entropy = [[]*(1+max(target_rows))]
-    for row_idx, col_idx in zip(target_rows, target_cols):
-        if col_idx==0:
-            continue
-        #Assumption: Target tokens are one-shifted 
-        next_token_logits = logits[row_idx, col_idx-1, :]
-        next_token_probs = torch.softmax(next_token_logits, dim=-1)
-        next_token_logprobs = torch.log(next_token_probs)
-        entropy[row_idx].append(-torch.sum(next_token_probs * next_token_logprobs))
-    entropy = torch.stack([torch.stack(ent) for ent in entropy])
-    #Assumption: batch_size==1
-    return entropy.mean().item()
+    """
+    Computes the entropy of the model's predictions for the target tokens.
+
+    Returns:
+    --------
+    float: The computed entropy for the target tokens, averaged across the sequence.
+    """
+    try:
+        entropy = []
+        target_inds = torch.where(target_ids!= -100)
+        target_rows = target_inds[0].tolist()
+        target_cols = target_inds[-1].tolist()
+        entropy = [[]*(1+max(target_rows))]
+        for row_idx, col_idx in zip(target_rows, target_cols):
+            if col_idx==0:
+                continue
+            #Assumption: Target tokens are one-shifted 
+            next_token_logits = logits[row_idx, col_idx-1, :]
+            next_token_probs = torch.softmax(next_token_logits, dim=-1)
+            next_token_logprobs = torch.log(next_token_probs)
+            entropy[row_idx].append(-torch.sum(next_token_probs * next_token_logprobs))
+        entropy = torch.stack([torch.stack(ent) for ent in entropy])
+        #Assumption: batch_size==1
+        return entropy.mean().item()
+    except Exception as e:
+        raise RuntimeError(f"Error in get_entropy: {str(e)}")
 # ---------------------------------------------------------------------------
 def get_rationale_usefulness(model, prompt, response, correctAnswer, tokenizer):
-    direct_prompt = prompt + " " + correctAnswer
-    CoT_prompt = prompt + " " + response + " " + correctAnswer
+    """
+    Compute the uncertainty of a rationale based on the difference between the 
+    model's confidence in predicting the correct answer using direct prompting 
+    vs chain-of-thought (CoT) prompting.
 
-    direct_ids = tokenizer.encode(direct_prompt, padding="longest", truncation=True, return_tensors="pt")
-    CoT_ids = tokenizer.encode(CoT_prompt, padding="longest", truncation=True, return_tensors="pt")
+    Returns:
+    --------
+    float: The computed uncertainty for the rationale, where a higher value indicates
+    higher uncertainty in the rationale's usefulness.
+    """
+    if not isinstance(prompt, str) or not isinstance(response, str) or not isinstance(correctAnswer, str):
+            raise ValueError("Input 'prompt', 'response', and 'correctAnswer' must be strings.")
+    
+    try:
+        direct_prompt = prompt + " " + correctAnswer
+        CoT_prompt = prompt + " " + response + " " + correctAnswer
 
-    direct_logits = model(direct_ids).logits
-    CoT_logits = model(CoT_ids).logits
+        direct_ids = tokenizer.encode(direct_prompt, padding="longest", truncation=True, return_tensors="pt")
+        CoT_ids = tokenizer.encode(CoT_prompt, padding="longest", truncation=True, return_tensors="pt")
+        
 
-    direct_probs = F.softmax(direct_logits[:, -1, :], dim=-1)
-    CoT_probs = F.softmax(CoT_logits[:, -1, :], dim=-1)
+        direct_logits = model(direct_ids).logits
+        CoT_logits = model(CoT_ids).logits
 
-    correct_answer_ids = tokenizer.encode(correctAnswer, return_tensors='pt')
-    correct_answer_id = correct_answer_ids[0, -1].item()
+        direct_probs = F.softmax(direct_logits[:, -1, :], dim=-1)
+        CoT_probs = F.softmax(CoT_logits[:, -1, :], dim=-1)
 
-    p_direct = direct_probs[0, correct_answer_id].item()
-    p_CoT = CoT_probs[0, correct_answer_id].item()
+        correct_answer_ids = tokenizer.encode(correctAnswer, return_tensors='pt')
+        correct_answer_id = correct_answer_ids[0, -1].item()
 
-    return p_direct - p_CoT
+        p_direct = direct_probs[0, correct_answer_id].item()
+        p_CoT = CoT_probs[0, correct_answer_id].item()
+
+        return p_direct - p_CoT
+    
+    except Exception as e:
+        raise RuntimeError(f"Error in get_rationale_usefulness: {str(e)}")
 
 # ---------------------------------------------------------------------------
 def fix_encoding(batch):
