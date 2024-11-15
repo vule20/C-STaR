@@ -181,7 +181,7 @@ parser.add_argument(
 parser.add_argument(
     "-method",
     type=str,
-    choices=["ppl", "entropy"],
+    choices=["ppl", "entropy", "rationale_usefulness"],
     help="Type of uncertainty method to use",
     default="ppl",
 )
@@ -678,7 +678,7 @@ def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="p
             input_ids, target_ids = input_target_ids(modelName, prompt, response, tokenizer)
             outputs = model(input_ids=input_ids, labels=target_ids)
             return get_entropy(outputs.logits, target_ids)
-        elif method == 'rationale_usefullness':
+        elif method == "rationale_usefulness":
             if correctAnswer is None:
                     raise ValueError("Correct answer must be provided for rationale usefulness method.")
             return get_rationale_usefulness(model, prompt, response, correctAnswer, tokenizer)
@@ -688,7 +688,7 @@ def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="p
         raise RuntimeError(f"Error occurred in compute_uncertainty for method '{method}': {str(e)}")
 # ---------------------------------------------------------------------------
 def is_uncertain(uncertainty, method_param, method="ppl"):
-    if method in ["ppl", 'entropy', 'rationale_usefullness']:
+    if method in ["ppl", "entropy", "rationale_usefulness"]:
         if uncertainty > float(method_param):
             return True 
         return False
