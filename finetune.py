@@ -802,9 +802,9 @@ def main():
                         for inp, out in zip(testInpText, testGenText):
                             extractedAnswer = extractAnswer(instance["answer"], args.dataset, args.direct)
                 model.train()
-            if math.isclose(avgLoss, 0):
-                break
             if numSteps >= config.maxSteps:
+                break
+        if math.isclose(avgLoss, 0):
                 break
         if numSteps >= config.maxSteps:
                 break
