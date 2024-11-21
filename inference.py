@@ -1124,6 +1124,8 @@ def main():
                 rationalizedWrongPreds = []
                 accuracyScore = 0
                 rationalizedAccuracyScore = 0
+                if config.uncertainty:
+                    uncertainties = []
                 for testInstance in tqdm(testData, desc="Test Instance"):
                     testPrompt = generateTestPrompt(
                         testInstance,
@@ -1249,6 +1251,7 @@ def main():
                                 "is_uncertain": model_uncertain,
                             }
                         )
+                        uncertainties.append(model_uncertain)
 
                     if not curInstanceCorrect:
                         wrongPreds.append(testInstance)
@@ -1381,8 +1384,9 @@ def main():
                             if not curInstanceCorrect:
                                 rationalizedWrongPreds.append(testInstance)
                     logging.info("*" * 50)
-                #     break
                 print("Accuracy: {:0.2f}% ({}/{})".format((accuracyScore/len(testData))*100, accuracyScore, len(testData)))
+                if config.uncertainty:
+                    print("Uncertain rationales: {}/{} ({:0.2f}%)".format(sum(uncertainties), len(uncertainties), 100*(sum(uncertainties)/len(uncertainties))))
                 if config.rationalize:
                     print("Rationalization Accuracy: {:0.2f}% ({}/{})".format((rationalizedAccuracyScore/(len(rationalizedCorrectPreds)+len(rationalizedWrongPreds)))*100, rationalizedAccuracyScore, (len(rationalizedCorrectPreds)+len(rationalizedWrongPreds))))
                 if not config.outPath.endswith("/"):
@@ -1407,16 +1411,17 @@ def main():
                     "w",
                 ) as fout:
                     json.dump(wrongPreds, fout)
-                with open(
-                    f'{config.outPath}{config.saveAs}/{trainFile.split("/")[-1].split(".")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_rationalizedCorrect.json',
-                    "w",
-                ) as fout:
-                    json.dump(rationalizedCorrectPreds, fout)
-                with open(
-                    f'{config.outPath}{config.saveAs}/{trainFile.split("/")[-1].split(".")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_rationalizedWrong.json',
-                    "w",
-                ) as fout:
-                    json.dump(rationalizedWrongPreds, fout)
+                if config.rationalize:
+                    with open(
+                        f'{config.outPath}{config.saveAs}/{trainFile.split("/")[-1].split(".")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_rationalizedCorrect.json',
+                        "w",
+                    ) as fout:
+                        json.dump(rationalizedCorrectPreds, fout)
+                    with open(
+                        f'{config.outPath}{config.saveAs}/{trainFile.split("/")[-1].split(".")[0]}_{testFile.split("/")[-1].split(".")[0]}_{config.dataset}_rationalizedWrong.json',
+                        "w",
+                    ) as fout:
+                        json.dump(rationalizedWrongPreds, fout)
 
     wandb.finish()
 # ---------------------------------------------------------------------------
