@@ -25,6 +25,8 @@ from pathlib import Path
 from peft import PeftModel, PeftConfig
 import torch
 import torch.nn.functional as F
+import spacy
+from sentence_transformers import SentenceTransformer, util
 
 MODEL_TEMPERATURE = 0.1
 MODEL_TOP_P = 0.9
@@ -33,6 +35,7 @@ MODEL_MAX_NEW_TOKENS = 256
 MODEL_DO_SAMPLE = True
 MODEL_REPETITION_PENALTY = 1.0
 MAX_LENGTH = 4096
+PC_NUM_RETURN_SEQUENCES = 5
 
 supportedModels = ["gptj", "unifiedqa", "llama3.1-instruct"]
 supportedSizes = {"gptj": ["6b"], "unifiedqa": ["3b"], "llama3.1-instruct": ["8b"]}
@@ -181,7 +184,7 @@ parser.add_argument(
 parser.add_argument(
     "-method",
     type=str,
-    choices=["ppl", "entropy", "rationale_usefulness"],
+    choices=["ppl", "entropy", "rationale_usefulness", "paraphrase_consistency"],
     help="Type of uncertainty method to use",
     default="ppl",
 )
@@ -581,19 +584,15 @@ def infer(model, modelName, tokenizer, prompt, generationConfig={}):
 
     print(f"prompt: {prompt}")
     try:
-        genTokens = model.generate(
-            input_ids=inputIDs,
-            attention_mask=attentionMask,
-            max_new_tokens=MODEL_MAX_NEW_TOKENS,
-            pad_token_id=tokenizer.eos_token_id,
-            **generationConfig,
+        genText = generate_responses( 
+            model,
+            modelName, 
+            tokenizer, 
+            inputIDs, 
+            attentionMask, 
+            generationConfig=generationConfig
         )
-
-        if modelName == "gptj" or modelName == "llama3.1-instruct":
-            outputIDs = genTokens[0, len(inputIDs[0]) :]
-        else:
-            outputIDs = genTokens[0, :]
-        genText = tokenizer.decode(outputIDs)
+        genText = genText[0]
         print(f"genText: {genText}")
         return genText
     except Exception as e:
@@ -620,9 +619,26 @@ def input_target_ids(modelName, prompt, response, tokenizer):
             target_ids = input_ids.clone()
             target_ids[0, :-response_ids.shape[-1]] = -100
         return input_ids, target_ids
-
 # ---------------------------------------------------------------------------
+def generate_responses(model, modelName, tokenizer, inputIDs, attentionMask, generationConfig={}):
+    genTokens = model.generate(
+        input_ids=inputIDs,
+        attention_mask=attentionMask,
+        max_new_tokens=MODEL_MAX_NEW_TOKENS,
+        pad_token_id=tokenizer.eos_token_id,
+        **generationConfig,
+    )
 
+    responses = []
+    num_return_sequences = generationConfig["num_return_sequences"] if "num_return_sequences" in generationConfig else 1
+    for i in range(num_return_sequences):
+        if modelName == "gptj" or modelName == "llama3.1-instruct":
+            outputIDs = genTokens[i, len(inputIDs[0]) :]
+        else:
+            outputIDs = genTokens[i, :] 
+        responses.append(tokenizer.decode(outputIDs))
+    return responses
+# ---------------------------------------------------------------------------
 def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="ppl", correctAnswer=None):
     """
     Computes an uncertainty metric for a model's response to a given prompt using 
@@ -682,13 +698,30 @@ def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="p
             if correctAnswer is None:
                     raise ValueError("Correct answer must be provided for rationale usefulness method.")
             return get_rationale_usefulness(model, prompt, response, correctAnswer, tokenizer)
+        elif method == "paraphrase_consistency":
+            tokenizedInput = tokenizer(prompt, return_tensors="pt")
+            inputIDs = tokenizedInput.input_ids.to(device=model.device)
+            attentionMask = tokenizedInput.attention_mask.to(device=model.device)
+            generations = generate_responses( 
+                model,
+                modelName, 
+                tokenizer, 
+                inputIDs, 
+                attentionMask, 
+                generationConfig={
+                    "do_sample": True, 
+                    "num_return_sequences": PC_NUM_RETURN_SEQUENCES
+                }
+            )
+            sim_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+            return 1-compute_paraphrase_consistency(response, generations, sim_model)
         else:
             raise ValueError(f"Unrecognized uncertainty quantification method: {method}")
     except Exception as e:
         raise RuntimeError(f"Error occurred in compute_uncertainty for method '{method}': {str(e)}")
 # ---------------------------------------------------------------------------
 def is_uncertain(uncertainty, method_param, method="ppl"):
-    if method in ["ppl", "entropy", "rationale_usefulness"]:
+    if method in ["ppl", "entropy", "rationale_usefulness", "paraphrase_consistency"]:
         if uncertainty > float(method_param):
             return True 
         return False
@@ -761,7 +794,40 @@ def get_rationale_usefulness(model, prompt, response, correctAnswer, tokenizer):
     
     except Exception as e:
         raise RuntimeError(f"Error in get_rationale_usefulness: {str(e)}")
-
+# ---------------------------------------------------------------------------
+def compute_paraphrase_consistency(response, generations, sim_model):
+    chunker = spacy.load("en_core_web_lg")
+    
+    gold_sents = [sent.text for sent in chunker(response).sents]
+    if not gold_sents or not generations:
+        return 0
+    gold_embeddings = sim_model.encode(gold_sents, convert_to_tensor=True)
+    
+    paraphrase_similarities = []
+    for gtn in generations:
+        gen_sents = [sent.text for sent in chunker(gtn).sents]
+        if not gen_sents:
+            paraphrase_similarities.append(0)
+            continue
+    
+        gen_embeddings = sim_model.encode(gen_sents, convert_to_tensor=True)
+        
+        sims = [[util.pytorch_cos_sim(gen_emb, gold_emb).item() for gold_emb in gold_embeddings]
+                for gen_emb in gen_embeddings]
+        
+        # Calculate precision and recall
+        precision = [max(sim_row) for sim_row in sims]
+        recall = [0] * len(gold_sents)
+        for col in range(len(gold_sents)):
+            recall[col] = max(sims[row][col] for row in range(len(sims)))
+        
+        precision = sum(precision)/len(precision) if precision else 0
+        recall = sum(recall)/len(recall) if recall else 0
+        f1 = (2*precision*recall/(precision+recall+1e-5)) if (precision + recall) > 0 else 0
+        
+        paraphrase_similarities.append(f1)
+    
+    return sum(paraphrase_similarities)/len(paraphrase_similarities) if paraphrase_similarities else 0
 # ---------------------------------------------------------------------------
 def fix_encoding(batch):
         try:
@@ -1353,7 +1419,6 @@ def main():
                     json.dump(rationalizedWrongPreds, fout)
 
     wandb.finish()
-
-
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     main()
