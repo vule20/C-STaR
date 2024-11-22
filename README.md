@@ -12,3 +12,8 @@ module load cudnn/8.9.7.29-12-cuda12.6
 conda create --name llama3 python=3.9
 pip install -r requirements_llama3.txt --no-cache
 ```
+
+Run this command to submit jobs:
+```
+sbatch scheduleJobs_vu.sh -v ppl -w 1.8
+```
