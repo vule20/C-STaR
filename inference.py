@@ -700,8 +700,8 @@ def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="p
             return get_rationale_usefulness(model, prompt, response, correctAnswer, tokenizer)
         elif method == "prediction_confidence":
             if correctAnswer is None:
-                raise ValueError("Correct answer must be provided for rationale usefulness method.")
-            return prediction_confidence(model, tokenizer, prompt, response)
+                raise ValueError("Correct answer must be provided for prediction_confidence method.")
+            return 1-get_prediction_confidence(model, tokenizer, prompt, response, correctAnswer)
         elif method == "paraphrase_consistency":
             tokenizedInput = tokenizer(prompt, return_tensors="pt")
             inputIDs = tokenizedInput.input_ids.to(device=model.device)
@@ -760,54 +760,55 @@ def get_entropy(logits, target_ids):
     except Exception as e:
         raise RuntimeError(f"Error in get_entropy: {str(e)}")
 # ---------------------------------------------------------------------------
-
-def get_prediction_confidence(model, prompt, response, tokenizer):
+def get_prediction_confidence(model, tokenizer, prompt, response, correctAnswer):
     """
     Compute the prediction confidence of a rationale using the formula from the paper.
+    Assumption: Batch size is 1
+    Assumption: correctAnswer is the top predicted token after input+rationale
 
     Returns:
     --------
-    float: The computed prediction confidence, where a lower value indicates higher confidence.
+    float: The computed prediction confidence, where a higher value indicates higher confidence.
     """
     if not isinstance(prompt, str) or not isinstance(response, str):
         raise ValueError("Inputs 'prompt' and 'response' must be strings.")
 
     try:
         # Combine prompt and response
-        input_text = prompt + " " + response
-        input_ids = tokenizer.encode(input_text, return_tensors="pt", padding="longest", truncation=True)
+        input_text = prompt + " " + response + " " + "Therefore, the answer is " + "(" + correctAnswer + ")"
+        input_ids = tokenizer.encode(
+            input_text, 
+            return_tensors="pt", 
+        )
 
         # Get model logits
         with torch.no_grad():
-            logits = model(input_ids).logits 
+            model_outs = model(input_ids)
+            logits = model_outs.logits 
 
         # Convert logits to probabilities
         probs = F.softmax(logits, dim=-1)
 
         # Compute prediction confidence for tokens after the rationale
-        rationale_length = len(tokenizer.encode(prompt))  # Length of the rationale
+        rationale_length = len(tokenizer.encode(prompt+ " " + response + " "  + "Therefore, the answer is ("))
+        answer_length = len(tokenizer.encode(correctAnswer, add_special_tokens=False))
         confidences = []
 
-        for k in range(rationale_length, input_ids.shape[1]):  # Tokens after the rationale
+        for k in range(rationale_length, rationale_length+answer_length):  # Tokens after the rationale
+            assert k < input_ids.shape[1]
             # Get top 2 probabilities for token `k`
             top_probs, _ = torch.topk(probs[0, k], k=2)  # Get the top 2 probabilities
             p_t1_k, p_t2_k = top_probs  # Top-1 and Top-2 probabilities
 
             # Calculate confidence for token `k`
-            if (p_t1_k - p_t2_k).item() != 0:  # Avoid division by zero
-                confidence = 1 / (p_t1_k - p_t2_k).item()
-            else:
-                confidence = float("inf")  # Assign infinite confidence if the difference is zero
+            confidence = (p_t1_k - p_t2_k).item()
 
             confidences.append(confidence)
-
         # Return the average prediction confidence
-        return sum(confidences) / len(confidences) if confidences else float("inf")
-    
+        return sum(confidences) / len(confidences) if confidences else 0
     except Exception as e:
         raise RuntimeError(f"Error in get_prediction_confidence: {str(e)}")
-
-
+# ---------------------------------------------------------------------------
 def get_rationale_usefulness(model, prompt, response, correctAnswer, tokenizer):
     """
     Compute the uncertainty of a rationale based on the difference between the 
