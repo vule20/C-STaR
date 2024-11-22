@@ -701,7 +701,7 @@ def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="p
         elif method == "prediction_confidence":
             if correctAnswer is None:
                 raise ValueError("Correct answer must be provided for rationale usefulness method.")
-            return prediction_confidence(model, tokenizer, prompt, response)
+            return get_prediction_confidence(model, tokenizer, prompt, response)
         elif method == "paraphrase_consistency":
             tokenizedInput = tokenizer(prompt, return_tensors="pt")
             inputIDs = tokenizedInput.input_ids.to(device=model.device)
@@ -776,6 +776,8 @@ def get_prediction_confidence(model, prompt, response, tokenizer):
         # Combine prompt and response
         input_text = prompt + " " + response
         input_ids = tokenizer.encode(input_text, return_tensors="pt", padding="longest", truncation=True)
+        device = next(model.parameters()).device
+        input_ids = input_ids.to(device)
 
         # Get model logits
         with torch.no_grad():
