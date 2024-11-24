@@ -917,6 +917,7 @@ def main():
         NotImplementedError: Raised for unsupported datasets or methods if not implemented.
     """
     args = parser.parse_args()
+    print(args)
 
     wandb.init(project="STaRC", config=processArguments(args))
 
