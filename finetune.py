@@ -6,7 +6,7 @@ import torch
 import transformers
 from transformers import AutoModelForCausalLM, AutoTokenizer, DataCollatorForSeq2Seq, DataCollatorForLanguageModeling, DataCollatorForSeq2Seq, AdamW, get_scheduler, T5ForConditionalGeneration, T5Tokenizer, LlamaForCausalLM
 from torch.optim import Adam
-from datasets import Dataset, load_dataset, DatasetDict
+from datasets import Dataset, load_dataset
 import numpy as np
 import json
 import json
@@ -299,7 +299,7 @@ class DatasetTokenizer():
     def tokenize(self, instances):
         if self.modelName in ["gptj", "llama3.1-instruct"]:
             prompt = self._generateIndividualPrompt(instances)
-            tokenizedInput = self.tokenizer(prompt, return_tensors="pt", truncation=True, padding="max_length", max_length=MAXLENGTH)
+            tokenizedInput = self.tokenizer(promptHeader[self.modelName] + prompt, return_tensors="pt", truncation=True, padding="max_length", max_length=MAXLENGTH)
             tokenizedInput.update({
                 "input_ids": torch.squeeze(tokenizedInput.input_ids, dim=0),
                 "attention_mask": torch.squeeze(tokenizedInput.attention_mask, dim=0),
@@ -307,7 +307,7 @@ class DatasetTokenizer():
             return tokenizedInput
         elif self.modelName == "unifiedqa":
             prompt, label = self._generateIndividualPrompt(instances)
-            tokenizedInput = self.tokenizer(prompt, return_tensors="pt", truncation=True, padding="max_length", max_length=MAXLENGTH)
+            tokenizedInput = self.tokenizer(promptHeader[self.modelName] + prompt, return_tensors="pt", truncation=True, padding="max_length", max_length=MAXLENGTH)
             tokenizedLabels = self.tokenizer(label, return_tensors="pt", truncation=True, padding="max_length", max_length=MAXLENGTH).input_ids
             tokenizedInput.update({
                 "labels": torch.squeeze(tokenizedLabels, dim=0),
@@ -343,61 +343,95 @@ def extractAnswer(answer, dataset, direct=False):
     print(result)
     {'answer': '42'}
     """
+    print(answer)
     if dataset not in supportedDatasets:
         raise ValueError(f"{dataset} not supported!")
     if dataset == "commonsense_qa":
+        logging.info("extracting answer from commonsense qa")
         if not direct:
-            searchPattern = "answer is .*."
-        else: 
+            searchPattern = "answer is .*." 
+        else:
             searchPattern = "\([a-z]\)."
+
         matchedSpan = re.search(searchPattern, answer)
         if matchedSpan == None:
             logging.warning(f"Could not extract answer from {answer}!")
             return None
             # raise RuntimeError(f"Could not extract answer from {answer}!")
-        extractedAnswer = answer[matchedSpan.start():matchedSpan.end()].strip()
-        answerPattern = "\([a-z]\)."
+        extractedAnswer = answer[matchedSpan.start() : matchedSpan.end()].strip()
+        answerPattern = "\(?[A-Za-z]\)?."
         matchedAnswer = re.findall(answerPattern, extractedAnswer)
-        if len(matchedAnswer)==0:
-            logging.warning(f"Could not extract answer from {extractedAnswer}!")
+        if len(matchedAnswer) == 0:
+            logging.warning(f"Could not extract final answer from {extractedAnswer}!")
             return None
             # raise RuntimeError(f"Could not extract answer from {extractedAnswer}!")
         matchedAnswer = matchedAnswer[-1][1]
         extractedAnswer = {
-            "answer":matchedAnswer.strip(),
+            "answer": matchedAnswer.strip().lower(),
         }
         if not direct:
-            rationale = answer[:matchedSpan.start()]
+            rationale = answer[: matchedSpan.start()]
             rationalePattern = "[.]"
             matchedRationale = re.split(rationalePattern, rationale)
             if len(matchedRationale):
-                rationale = ".".join(matchedRationale[:-1])+"."
-            extractedAnswer.update({
-                "rationale":rationale.strip(), 
-            })
+                rationale = ".".join(matchedRationale[:-1]) + "."
+            extractedAnswer.update(
+                {
+                    "rationale": rationale.strip(),
+                }
+            )
     elif dataset == "gsm8k":
         if not direct:
             searchPattern = "\n#### [0-9]+"
-        else: 
+        else:
             searchPattern = "[0-9]+"
         matchedSpan = re.search(searchPattern, answer)
         if matchedSpan == None:
             logging.warning(f"Could not extract answer from {answer}!")
             return None
             # raise RuntimeError(f"Could not extract answer from {answer}!")
-        extractedAnswer = answer[matchedSpan.start():matchedSpan.end()].strip()
+        extractedAnswer = answer[matchedSpan.start() : matchedSpan.end()].strip()
         if not direct:
-            matchedAnswer = re.sub("#","",extractedAnswer).strip()
+            matchedAnswer = re.sub("#", "", extractedAnswer).strip()
         else:
             matchedAnswer = extractedAnswer.strip()
         extractedAnswer = {
-            "answer":matchedAnswer.strip(),
+            "answer": matchedAnswer.strip(),
         }
         if not direct:
-            rationale = answer[:matchedSpan.start()]
-            extractedAnswer.update({
-                "rationale":rationale.strip(), 
-            })
+            rationale = answer[: matchedSpan.start()]
+            extractedAnswer.update(
+                {
+                    "rationale": rationale.strip(),
+                }
+            )
+    elif dataset == "arithmetic":
+        if not direct:
+            searchPattern = "</scratch>\n"
+        else:
+            searchPattern = "Target:\n"
+        matchedSpan = re.search(searchPattern, answer)
+        if matchedSpan == None:
+            logging.warning(f"Could not extract answer from {answer}!")
+            return None
+            # raise RuntimeError(f"Could not extract answer from {answer}!")
+        matchedAnswer = answer[matchedSpan.end() :].strip()
+        if "\n" in matchedAnswer:
+            matchedAnswer = matchedAnswer[: matchedAnswer.index("\n")]
+        extractedAnswer = {
+            "answer": matchedAnswer.strip(),
+        }
+        if not direct:
+            scratchStart = "<scratch>"
+            scratchEnd = "</scratch>\n"
+            matchedStartSpan = re.search(scratchStart, answer)
+            matchedEndSpan = re.search(scratchEnd, answer)
+            scratch = answer[matchedStartSpan.start() : matchedEndSpan.end()]
+            extractedAnswer.update(
+                {
+                    "rationale": scratch.strip(),
+                }
+            )
     return extractedAnswer
 #---------------------------------------------------------------------------
 def processArguments(args):
@@ -517,36 +551,7 @@ def processArguments(args):
         
     return config
 #---------------------------------------------------------------------------
-def fix_encoding(batch):
-        try:
-            return {"text": batch["text"].encode("utf-8", errors="replace").decode("utf-8")}
-        except UnicodeDecodeError as e:
-            print(f"Error in row: {batch}")
-            print(f"Error message: {e}")
-            return batch 
-# ---------------------------------------------------------------------------
 def main():
-    """
-    Main function to configure, train, and evaluate a language model using Weights & Biases for experiment tracking.
-
-    Function Workflow:
-    -----------
-        1. Parse command-line arguments.
-        2. Initialize a Weights & Biases project for tracking.
-        3. Identify device availability (CPU or GPU).
-        4. Load the specified pre-trained model and tokenizer.
-        5. Preprocess and tokenize the input dataset(s).
-        6. Initialize data loaders for training (and testing, if applicable).
-        7. Configure the optimizer and learning rate scheduler.
-        8. Train the model over the specified number of epochs or steps.
-        9. Log training progress and periodically save the model with the best performance.
-        10. Optionally evaluate the model during training.
-
-    Exceptions:
-    -----------
-        ValueError: Raised if unsupported model size, dataset, or other configuration discrepancies are encountered.
-        NotImplementedError: Raised for unsupported datasets or evaluation functionality if not yet implemented.
-    """
     args = parser.parse_args()
 
     wandb.init(
@@ -639,34 +644,13 @@ def main():
     if config.dataset in supportedHFDatasets:
         if config.dataset == "gsm8k":
             dataset = load_dataset(config.dataset, "main")
-        # elif config.dataset == "commonsense_qa":
-        #     dataset_train = load_dataset('commonsense_qa' , split="train", download_mode="force_redownload")
-        #     dataset_valid = load_dataset('commonsense_qa', split="validation", download_mode="force_redownload")
-        #     dataset_test = load_dataset('commonsense_qa', split="test", download_mode="force_redownload")
-
-        #     print(f"Train size: {len(dataset_train)}")
-        #     print(f"Valid size: {len(dataset_train)}")
-        #     print(f"Test size: {len(dataset_test)}")
-
-        #     dataset = DatasetDict({
-        #         'train': dataset_train,
-        #         'validation': dataset_valid,
-        #         'test': dataset_test
-        #     })
         else:
-            try:
-                dataset = load_dataset(config.dataset)
-            except UnicodeDecodeError as e:
-                print(f"Error: {e}")
-
-                dataset = dataset.map(fix_encoding)
-                print("Reprocessing completed.")
-                dataset = dataset.map(fix_encoding)
+            dataset = load_dataset(config.dataset)
     
     trainData = []
     for trainFile in config.trainFiles:
         if trainFile.endswith(".json"):
-            with open(trainFile, "r", encoding='utf-8') as f:
+            with open(trainFile, "r") as f:
                 trainData.extend(json.load(f))
         elif config.dataset in supportedHFDatasets:
             trainData.extend(list(dataset[trainFile]))
@@ -680,7 +664,7 @@ def main():
         testData = []
         for testFile in config.testFiles:
             if testFile.endswith(".json"):
-                with open(testFile, "r", encoding='utf-8') as f:
+                with open(testFile, "r") as f:
                     testData.extend(json.load(f))
             elif config.dataset in supportedHFDatasets:
                 testData.extend(list(dataset[testFile]))
@@ -690,7 +674,7 @@ def main():
 
     trainPrompt=""
     if config.trainPrompt!="None":
-        with open(config.trainPrompt, "r", encoding='utf-8') as f:
+        with open(config.trainPrompt, "r") as f:
             trainPrompt = f.read()
 
     if config.dataset == "commonsense_qa":
@@ -805,7 +789,7 @@ def main():
             if numSteps >= config.maxSteps:
                 break
         if math.isclose(avgLoss, 0):
-                break
+            break
         if numSteps >= config.maxSteps:
                 break
         logging.info("*"*50)

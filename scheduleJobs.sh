@@ -113,56 +113,108 @@ TRAINFILES="${INFERENCEPATH}${MODELNAME}/${TRAINPREFIX}_${TRAINSPLIT}_${DATASET}
 NEXTITERATION=$((ITERATION+1))
 NEXTSTEPS=$(echo "$NUMSTEPS*1.2/1" | bc )
 
+if (($ITERATION > 0)); then 
+    ZEROSHOT=true
+fi
+
 echo "**SCHEDULE JOBS**"
 echo "ITERATION : ${ITERATION}"
 echo "NUMSTEPS : ${NUMSTEPS}"
 echo "ENDITERATION : ${ENDITERATION}"
+echo "ZEROSHOT : ${ZEROSHOT}"
 if [ "$UNCERTAINTY" = true ] ; then
     echo "WITH UNCERTAINTY METHOD: ${METHOD}, param: ${METHODPARAM}"
 fi ;
 
 echo "<<INFERENCE>> [VALIDATION]"
 if [ "$UNCERTAINTY" = true ] ; then
-    python3 inference.py \
-        -out ./inferenceOuts/ \
-        -rationalize \
-        -trainPrompts \
-        -trainFiles ./datasets/$DATASET/$MODEL/prompts.txt \
-        -hintTrainPrompts ./datasets/$DATASET/$MODEL/promptsWithHints.txt \
-        -testFiles $VALSPLIT \
-        -model $MODEL \
-        -size $MODELSIZE \
-        -modelPath $OLDMODELPATH \
-        -dataset $DATASET \
-        -maxShots $MAXSHOTS \
-        -trainPattern $TRAINPATT \
-        -testPattern $TESTPATT \
-        -log $LOGFILE \
-        -out $INFERENCEPATH \
-        -saveAs $MODELNAME \
-        -cache_dir $HF_HOME \
-        -uncertainty \
-        -method ${METHOD} \
-        -methodParam ${METHODPARAM}
+    if [ "$ZEROSHOT" = true ] ; then
+        python3 inference.py \
+            -out ./inferenceOuts/ \
+            -rationalize \
+            -trainPrompts \
+            -trainFiles ./datasets/$DATASET/$MODEL/prompts.txt \
+            -hintTrainPrompts ./datasets/$DATASET/$MODEL/promptsWithHints.txt \
+            -testFiles $VALSPLIT \
+            -model $MODEL \
+            -size $MODELSIZE \
+            -modelPath $OLDMODELPATH \
+            -dataset $DATASET \
+            -maxShots $MAXSHOTS \
+            -trainPattern $TRAINPATT \
+            -testPattern $TESTPATT \
+            -log $LOGFILE \
+            -out $INFERENCEPATH \
+            -saveAs $MODELNAME \
+            -cache_dir $HF_HOME \
+            -uncertainty \
+            -method ${METHOD} \
+            -methodParam ${METHODPARAM} \
+            -zeroShot
+    else 
+        python3 inference.py \
+            -out ./inferenceOuts/ \
+            -rationalize \
+            -trainPrompts \
+            -trainFiles ./datasets/$DATASET/$MODEL/prompts.txt \
+            -hintTrainPrompts ./datasets/$DATASET/$MODEL/promptsWithHints.txt \
+            -testFiles $VALSPLIT \
+            -model $MODEL \
+            -size $MODELSIZE \
+            -modelPath $OLDMODELPATH \
+            -dataset $DATASET \
+            -maxShots $MAXSHOTS \
+            -trainPattern $TRAINPATT \
+            -testPattern $TESTPATT \
+            -log $LOGFILE \
+            -out $INFERENCEPATH \
+            -saveAs $MODELNAME \
+            -cache_dir $HF_HOME \
+            -uncertainty \
+            -method ${METHOD} \
+            -methodParam ${METHODPARAM}
+    fi ;
 else 
-    python3 inference.py \
-        -out ./inferenceOuts/ \
-        -rationalize \
-        -trainPrompts \
-        -trainFiles ./datasets/$DATASET/$MODEL/prompts.txt \
-        -hintTrainPrompts ./datasets/$DATASET/$MODEL/promptsWithHints.txt \
-        -testFiles $VALSPLIT \
-        -model $MODEL \
-        -size $MODELSIZE \
-        -modelPath $OLDMODELPATH \
-        -dataset $DATASET \
-        -maxShots $MAXSHOTS \
-        -trainPattern $TRAINPATT \
-        -testPattern $TESTPATT \
-        -log $LOGFILE \
-        -out $INFERENCEPATH \
-        -saveAs $MODELNAME \
-        -cache_dir $HF_HOME
+    if [ "$ZEROSHOT" = true ] ; then
+        python3 inference.py \
+            -out ./inferenceOuts/ \
+            -rationalize \
+            -trainPrompts \
+            -trainFiles ./datasets/$DATASET/$MODEL/prompts.txt \
+            -hintTrainPrompts ./datasets/$DATASET/$MODEL/promptsWithHints.txt \
+            -testFiles $VALSPLIT \
+            -model $MODEL \
+            -size $MODELSIZE \
+            -modelPath $OLDMODELPATH \
+            -dataset $DATASET \
+            -maxShots $MAXSHOTS \
+            -trainPattern $TRAINPATT \
+            -testPattern $TESTPATT \
+            -log $LOGFILE \
+            -out $INFERENCEPATH \
+            -saveAs $MODELNAME \
+            -cache_dir $HF_HOME \
+            -zeroShot
+    else 
+        python3 inference.py \
+            `-out ./inferenceOuts/ \
+            -rationalize \
+            -trainPrompts \
+            -trainFiles ./datasets/$DATASET/$MODEL/prompts.txt \
+            -hintTrainPrompts ./datasets/$DATASET/$MODEL/promptsWithHints.txt \
+            -testFiles $VALSPLIT \
+            -model $MODEL \
+            -size $MODELSIZE \
+            -modelPath $OLDMODELPATH \
+            -dataset $DATASET \
+            -maxShots $MAXSHOTS \
+            -trainPattern $TRAINPATT \
+            -testPattern $TESTPATT \
+            -log $LOGFILE \
+            -out $INFERENCEPATH \
+            -saveAs $MODELNAME \
+            -cache_dir $HF_HOME`
+    fi ;
 fi ;
 
 if [ $? != 0 ];
@@ -173,46 +225,93 @@ fi
 
 echo "<<INFERENCE>> [TRAIN]"
 if [ "$UNCERTAINTY" = true ] ; then
-    python3 inference.py \
-        -out ./inferenceOuts/ \
-        -rationalize \
-        -trainPrompts \
-        -trainFiles ./datasets/$DATASET/$MODEL/prompts.txt \
-        -hintTrainPrompts ./datasets/$DATASET/$MODEL/promptsWithHints.txt \
-        -testFiles $TRAINSPLIT \
-        -model $MODEL \
-        -size $MODELSIZE \
-        -modelPath $OLDMODELPATH \
-        -dataset $DATASET \
-        -maxShots $MAXSHOTS \
-        -trainPattern $TRAINPATT \
-        -testPattern $TESTPATT \
-        -log $LOGFILE \
-        -out $INFERENCEPATH \
-        -saveAs $MODELNAME \
-        -cache_dir $HF_HOME \
-        -uncertainty \
-        -method ${METHOD} \
-        -methodParam ${METHODPARAM}
+    if [ "$ZEROSHOT" = true ] ; then
+        python3 inference.py \
+            -out ./inferenceOuts/ \
+            -rationalize \
+            -trainPrompts \
+            -trainFiles ./datasets/$DATASET/$MODEL/prompts.txt \
+            -hintTrainPrompts ./datasets/$DATASET/$MODEL/promptsWithHints.txt \
+            -testFiles $TRAINSPLIT \
+            -model $MODEL \
+            -size $MODELSIZE \
+            -modelPath $OLDMODELPATH \
+            -dataset $DATASET \
+            -maxShots $MAXSHOTS \
+            -trainPattern $TRAINPATT \
+            -testPattern $TESTPATT \
+            -log $LOGFILE \
+            -out $INFERENCEPATH \
+            -saveAs $MODELNAME \
+            -cache_dir $HF_HOME \
+            -uncertainty \
+            -method ${METHOD} \
+            -methodParam ${METHODPARAM} \
+            -zeroShot
+    else 
+        python3 inference.py \
+            -out ./inferenceOuts/ \
+            -rationalize \
+            -trainPrompts \
+            -trainFiles ./datasets/$DATASET/$MODEL/prompts.txt \
+            -hintTrainPrompts ./datasets/$DATASET/$MODEL/promptsWithHints.txt \
+            -testFiles $TRAINSPLIT \
+            -model $MODEL \
+            -size $MODELSIZE \
+            -modelPath $OLDMODELPATH \
+            -dataset $DATASET \
+            -maxShots $MAXSHOTS \
+            -trainPattern $TRAINPATT \
+            -testPattern $TESTPATT \
+            -log $LOGFILE \
+            -out $INFERENCEPATH \
+            -saveAs $MODELNAME \
+            -cache_dir $HF_HOME \
+            -uncertainty \
+            -method ${METHOD} \
+            -methodParam ${METHODPARAM}
+    fi ;
 else
-    python3 inference.py \
-        -out ./inferenceOuts/ \
-        -rationalize \
-        -trainPrompts \
-        -trainFiles ./datasets/$DATASET/$MODEL/prompts.txt \
-        -hintTrainPrompts ./datasets/$DATASET/$MODEL/promptsWithHints.txt \
-        -testFiles $TRAINSPLIT \
-        -model $MODEL \
-        -size $MODELSIZE \
-        -modelPath $OLDMODELPATH \
-        -dataset $DATASET \
-        -maxShots $MAXSHOTS \
-        -trainPattern $TRAINPATT \
-        -testPattern $TESTPATT \
-        -log $LOGFILE \
-        -out $INFERENCEPATH \
-        -saveAs $MODELNAME \
-        -cache_dir $HF_HOME
+    if [ "$ZEROSHOT" = true ] ; then
+        python3 inference.py \
+            -out ./inferenceOuts/ \
+            -rationalize \
+            -trainPrompts \
+            -trainFiles ./datasets/$DATASET/$MODEL/prompts.txt \
+            -hintTrainPrompts ./datasets/$DATASET/$MODEL/promptsWithHints.txt \
+            -testFiles $TRAINSPLIT \
+            -model $MODEL \
+            -size $MODELSIZE \
+            -modelPath $OLDMODELPATH \
+            -dataset $DATASET \
+            -maxShots $MAXSHOTS \
+            -trainPattern $TRAINPATT \
+            -testPattern $TESTPATT \
+            -log $LOGFILE \
+            -out $INFERENCEPATH \
+            -saveAs $MODELNAME \
+            -cache_dir $HF_HOME \
+            -zeroShot
+    else
+        python3 inference.py \
+            -out ./inferenceOuts/ \
+            -rationalize \
+            -trainPrompts \
+            -trainFiles ./datasets/$DATASET/$MODEL/prompts.txt \
+            -hintTrainPrompts ./datasets/$DATASET/$MODEL/promptsWithHints.txt \
+            -testFiles $TRAINSPLIT \
+            -model $MODEL \
+            -size $MODELSIZE \
+            -modelPath $OLDMODELPATH \
+            -dataset $DATASET \
+            -maxShots $MAXSHOTS \
+            -trainPattern $TRAINPATT \
+            -testPattern $TESTPATT \
+            -log $LOGFILE \
+            -out $INFERENCEPATH \
+            -saveAs $MODELNAME \
+            -cache_dir $HF_HOME
+    fi ;
 fi ;
 
 if [ $? != 0 ];

@@ -337,7 +337,7 @@ def extractAnswer(answer, dataset, direct=False):
     if dataset == "commonsense_qa":
         logging.info("extracting answer from commonsense qa")
         if not direct:
-            searchPattern = "answer is .*."
+            searchPattern = "answer is .*." 
         else:
             searchPattern = "\([a-z]\)."
 
@@ -347,15 +347,15 @@ def extractAnswer(answer, dataset, direct=False):
             return None
             # raise RuntimeError(f"Could not extract answer from {answer}!")
         extractedAnswer = answer[matchedSpan.start() : matchedSpan.end()].strip()
-        answerPattern = "\([a-z]\)."
+        answerPattern = "\(?[A-Za-z]\)?."
         matchedAnswer = re.findall(answerPattern, extractedAnswer)
         if len(matchedAnswer) == 0:
-            logging.warning(f"Could not extract answer from {extractedAnswer}!")
+            logging.warning(f"Could not extract final answer from {extractedAnswer}!")
             return None
             # raise RuntimeError(f"Could not extract answer from {extractedAnswer}!")
         matchedAnswer = matchedAnswer[-1][1]
         extractedAnswer = {
-            "answer": matchedAnswer.strip(),
+            "answer": matchedAnswer.strip().lower(),
         }
         if not direct:
             rationale = answer[: matchedSpan.start()]
@@ -780,8 +780,6 @@ def get_prediction_confidence(model, tokenizer, prompt, response, correctAnswer)
             input_text, 
             return_tensors="pt", 
         )
-        device = next(model.parameters()).device
-        input_ids = input_ids.to(device)
 
         # Get model logits
         with torch.no_grad():
@@ -917,7 +915,6 @@ def main():
         NotImplementedError: Raised for unsupported datasets or methods if not implemented.
     """
     args = parser.parse_args()
-    print(args)
 
     wandb.init(project="STaRC", config=processArguments(args))
 
@@ -1324,10 +1321,10 @@ def main():
 
                             if not config.zeroShot:
                                 rationalizedFinalPrompt = (
-                                    rationalizedTrainPrompt + rationalizedTestPrompt
+                                    promptHeader[config.model] + rationalizedTrainPrompt + rationalizedTestPrompt
                                 )
                             else:
-                                rationalizedFinalPrompt = rationalizedTestPrompt
+                                rationalizedFinalPrompt = promptHeader[config.model] + rationalizedTestPrompt
                             genText = infer(
                                 model,
                                 config.model,
