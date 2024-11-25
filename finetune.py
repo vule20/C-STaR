@@ -63,8 +63,8 @@ promptFormat = {
 """,
         "content": """{input}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
-{output}""",
-        "footer": "<|eot_id|>",
+""",
+        "footer": "{output}<|eot_id|>",
     },
 }
 
@@ -236,6 +236,8 @@ class DatasetTokenizer():
                         inp += "\n"
                         if c.lower() == instance["answerKey"].lower():
                             corrAns = t
+                    if not self.direct:
+                        inp += "Explain your reasoning first and then predict the correct answer choice.\n"
                     inp += "A: "
                     if self.direct: 
                         out += "({}).\n\n".format(instance["answerKey"].lower())
@@ -256,10 +258,8 @@ class DatasetTokenizer():
                         out += instance["answer"]
                 else: 
                     raise NotImplementedError(f"Prompt generation not yet implemented for {self.dataset}")
-                return promptFormat[self.modelName]["header"] + promptFormat[self.modelName]["content"].format(
-                    input=inp,
-                    output=out
-                ) + promptFormat[self.modelName]["footer"]
+                #Returns input prompt (with label), input prompt (w/o label)
+                return promptFormat[self.modelName]["header"] + promptFormat[self.modelName]["content"].format(input=inp) + promptFormat[self.modelName]["footer"].format(output=out), promptFormat[self.modelName]["header"] + promptFormat[self.modelName]["content"].format(input=inp)
             elif self.modelName == "unifiedqa":
                 if self.dataset == "commonsense_qa":
                     inp += "Q: " + instance["question"] + "\nAnswer Choices:\n"
@@ -298,11 +298,15 @@ class DatasetTokenizer():
 
     def tokenize(self, instances):
         if self.modelName in ["gptj", "llama3.1-instruct"]:
-            prompt = self._generateIndividualPrompt(instances)
+            prompt, nonLabel = self._generateIndividualPrompt(instances)
             tokenizedInput = self.tokenizer(promptHeader[self.modelName] + prompt, return_tensors="pt", truncation=True, padding="max_length", max_length=MAXLENGTH)
+            tokenizedNonLabel = self.tokenizer(promptHeader[self.modelName] + nonLabel, return_tensors="pt", truncation=True, padding="max_length", max_length=MAXLENGTH)
+            labels = torch.squeeze(tokenizedInput.input_ids, dim=0).clone()
+            labels[:tokenizedNonLabel.shape[-1]] = -100
             tokenizedInput.update({
                 "input_ids": torch.squeeze(tokenizedInput.input_ids, dim=0),
                 "attention_mask": torch.squeeze(tokenizedInput.attention_mask, dim=0),
+                "labels": labels,
             })
             return tokenizedInput
         elif self.modelName == "unifiedqa":
@@ -349,23 +353,28 @@ def extractAnswer(answer, dataset, direct=False):
     if dataset == "commonsense_qa":
         logging.info("extracting answer from commonsense qa")
         if not direct:
-            searchPattern = "answer is .*." 
+            searchPatterns = ["answer is .*\.?", "\([A-Za-z]\)\.?", "answer( is)? .*\."]
         else:
-            searchPattern = "\([a-z]\)."
-
-        matchedSpan = re.search(searchPattern, answer)
+            searchPatterns = ["\([A-Za-z]\)\.?", "\(?[A-Za-z]\)?\."]
+        for searchPattern in searchPatterns:
+            matchedSpan = re.search(searchPattern, answer)
+            if matchedSpan != None:
+                break
         if matchedSpan == None:
             logging.warning(f"Could not extract answer from {answer}!")
             return None
             # raise RuntimeError(f"Could not extract answer from {answer}!")
         extractedAnswer = answer[matchedSpan.start() : matchedSpan.end()].strip()
-        answerPattern = "\(?[A-Za-z]\)?."
-        matchedAnswer = re.findall(answerPattern, extractedAnswer)
-        if len(matchedAnswer) == 0:
+        answerPatterns = [r"\((?P<answerChoice>[A-Za-z])\)", r"(?P<answerChoice>[A-Za-z])\."]
+        for answerPattern in answerPatterns:
+            matchedAnswer = re.search(answerPattern, extractedAnswer)
+            if matchedAnswer != None:
+                break
+        if matchedAnswer == None:
             logging.warning(f"Could not extract final answer from {extractedAnswer}!")
             return None
             # raise RuntimeError(f"Could not extract answer from {extractedAnswer}!")
-        matchedAnswer = matchedAnswer[-1][1]
+        matchedAnswer = matchedAnswer.group("answerChoice")
         extractedAnswer = {
             "answer": matchedAnswer.strip().lower(),
         }

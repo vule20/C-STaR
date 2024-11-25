@@ -225,6 +225,8 @@ def _generateIndividualPrompt(
                 if c == instance["answerKey"]:
                     inp += " (CORRECT)"
             inp += "\n"
+        if not direct:
+            inp += "Explain your reasoning first and then predict the correct answer choice.\n"
         inp += "A: "
         if not isTest:
             out += "({}).\n\n".format(instance["answerKey"].lower())
@@ -337,23 +339,28 @@ def extractAnswer(answer, dataset, direct=False):
     if dataset == "commonsense_qa":
         logging.info("extracting answer from commonsense qa")
         if not direct:
-            searchPattern = "answer is .*." 
+            searchPatterns = ["answer is .*\.?", "\([A-Za-z]\)\.?", "answer( is)? .*\."]
         else:
-            searchPattern = "\([a-z]\)."
-
-        matchedSpan = re.search(searchPattern, answer)
+            searchPatterns = ["\([A-Za-z]\)\.?", "\(?[A-Za-z]\)?\."]
+        for searchPattern in searchPatterns:
+            matchedSpan = re.search(searchPattern, answer)
+            if matchedSpan != None:
+                break
         if matchedSpan == None:
             logging.warning(f"Could not extract answer from {answer}!")
             return None
             # raise RuntimeError(f"Could not extract answer from {answer}!")
         extractedAnswer = answer[matchedSpan.start() : matchedSpan.end()].strip()
-        answerPattern = "\(?[A-Za-z]\)?."
-        matchedAnswer = re.findall(answerPattern, extractedAnswer)
-        if len(matchedAnswer) == 0:
+        answerPatterns = [r"\((?P<answerChoice>[A-Za-z])\)", r"(?P<answerChoice>[A-Za-z])\."]
+        for answerPattern in answerPatterns:
+            matchedAnswer = re.search(answerPattern, extractedAnswer)
+            if matchedAnswer != None:
+                break
+        if matchedAnswer == None:
             logging.warning(f"Could not extract final answer from {extractedAnswer}!")
             return None
             # raise RuntimeError(f"Could not extract answer from {extractedAnswer}!")
-        matchedAnswer = matchedAnswer[-1][1]
+        matchedAnswer = matchedAnswer.group("answerChoice")
         extractedAnswer = {
             "answer": matchedAnswer.strip().lower(),
         }
@@ -593,7 +600,7 @@ def infer(model, modelName, tokenizer, prompt, generationConfig={}):
             generationConfig=generationConfig
         )
         genText = genText[0]
-        print(f"genText: {genText}")
+        logging.info(f"genText: {genText}")
         return genText
     except Exception as e:
         print(f"An error occurred during inference: {e}")
