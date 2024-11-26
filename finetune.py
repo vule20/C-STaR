@@ -300,9 +300,9 @@ class DatasetTokenizer():
         if self.modelName in ["gptj", "llama3.1-instruct"]:
             prompt, nonLabel = self._generateIndividualPrompt(instances)
             tokenizedInput = self.tokenizer(promptHeader[self.modelName] + prompt, return_tensors="pt", truncation=True, padding="max_length", max_length=MAXLENGTH)
-            tokenizedNonLabel = self.tokenizer(promptHeader[self.modelName] + nonLabel, return_tensors="pt", truncation=True, padding="max_length", max_length=MAXLENGTH)
+            tokenizedNonLabel = self.tokenizer(promptHeader[self.modelName] + nonLabel, return_tensors="pt", truncation=True, max_length=MAXLENGTH)
             labels = torch.squeeze(tokenizedInput.input_ids, dim=0).clone()
-            labels[:tokenizedNonLabel.shape[-1]] = -100
+            labels[:(tokenizedNonLabel.input_ids).shape[-1]] = -100
             tokenizedInput.update({
                 "input_ids": torch.squeeze(tokenizedInput.input_ids, dim=0),
                 "attention_mask": torch.squeeze(tokenizedInput.attention_mask, dim=0),
