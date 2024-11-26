@@ -787,6 +787,8 @@ def get_prediction_confidence(model, tokenizer, prompt, response, correctAnswer)
             input_text, 
             return_tensors="pt", 
         )
+        device = next(model.parameters()).device
+        input_ids = input_ids.to(device)
 
         # Get model logits
         with torch.no_grad():
