@@ -732,6 +732,7 @@ def compute_uncertainty(model, modelName, tokenizer, prompt, response, method="p
         raise RuntimeError(f"Error occurred in compute_uncertainty for method '{method}': {str(e)}")
 # ---------------------------------------------------------------------------
 def is_uncertain(uncertainty, method_param, method="ppl"):
+    logging.info(f"Uncertainty:\n{uncertainty}")
     if method in ["ppl", "entropy", "rationale_usefulness", "paraphrase_consistency", "prediction_confidence"]:
         if uncertainty > float(method_param):
             return True 
