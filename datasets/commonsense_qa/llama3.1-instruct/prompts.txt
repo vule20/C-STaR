@@ -7,6 +7,7 @@ Answer Choices:
 (c) inkwell
 (d) desk drawer
 (e) blotter
+Explain your reasoning first and then predict the correct answer choice.
 A: <|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 The answer must be used to absorb extra ink. Blotters are designed to absorb liquids. Therefore, the answer is blotter (e).<|eot_id|><|start_header_id|>user<|end_header_id|>
@@ -17,6 +18,7 @@ Answer Choices:
 (c) television
 (d) cabinet
 (e) desk
+Explain your reasoning first and then predict the correct answer choice.
 A: <|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 The answer must require cable. Cable is used to provide satellite channels to televisions. Therefore, the answer is television (c).<|eot_id|><|start_header_id|>user<|end_header_id|>
@@ -27,6 +29,7 @@ Answer Choices:
 (c) natural habitat
 (d) storybook
 (e) dense forest
+Explain your reasoning first and then predict the correct answer choice.
 A: <|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 The answer must be a reason for a fox to go into the forest. The forest is a fox's natural habitat. Therefore, the answer is natural habitat (c).<|eot_id|><|start_header_id|>user<|end_header_id|>
@@ -37,6 +40,7 @@ Answer Choices:
 (c) desert
 (d) apartment
 (e) roadblock
+Explain your reasoning first and then predict the correct answer choice.
 A: <|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 The answer must be a place with many people. Populated areas, by definition, have a lot of people. Therefore, the answer is populated areas (a).<|eot_id|><|start_header_id|>user<|end_header_id|>
@@ -47,6 +51,7 @@ Answer Choices:
 (c) super market
 (d) fruit basket
 (e) fruit market
+Explain your reasoning first and then predict the correct answer choice.
 A: <|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 The answer should be the place where grocery items are placed before checking out. Of the above choices, grocery cart makes the most sense for holding grocery items. Therefore, the answer is grocery cart (b).<|eot_id|><|start_header_id|>user<|end_header_id|>
@@ -57,6 +62,7 @@ Answer Choices:
 (c) countryside
 (d) atlas
 (e) oceans
+Explain your reasoning first and then predict the correct answer choice.
 A: <|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 The answer must be something that used to do what Google Maps and GPS services do, which is give directions. Atlases were also used to give directions. Therefore, the answer is atlas (d).<|eot_id|><|start_header_id|>user<|end_header_id|>
@@ -67,6 +73,7 @@ Answer Choices:
 (c) bitterness
 (d) tears
 (e) sadness
+Explain your reasoning first and then predict the correct answer choice.
 A: <|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
 The answer should be a feeling which would cause someone who was doing all the work to get divorced. If someone feels bitter towards their spouse, they are likely to want a divorce. Therefore, the answer is bitterness (c).<|eot_id|>
