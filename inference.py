@@ -1290,7 +1290,6 @@ def main():
                         correctAnswer = testInstance["answerKey"].lower()
                     if prediction.lower() == correctAnswer:
                         accuracyScore += 1
-                        correctPreds.append(testInstance)
                         curInstanceCorrect = True
         
                     if config.uncertainty:
@@ -1306,7 +1305,7 @@ def main():
                         model_uncertain = is_uncertain(
                             uncertainty, config.methodParam, config.method
                         )
-                        curInstanceCorrect = model_uncertain
+                        curInstanceCorrect = not model_uncertain
                         wandb.log(
                             {
                                 "testInstance": testInstance,
@@ -1316,7 +1315,9 @@ def main():
                         )
                         uncertainties.append(model_uncertain)
 
-                    if not curInstanceCorrect:
+                    if curInstanceCorrect:
+                        correctPreds.append(testInstance)
+                    else:
                         wrongPreds.append(testInstance)
                         # Rationalize
                         if config.rationalize:
